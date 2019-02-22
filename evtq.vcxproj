@@ -21,13 +21,17 @@
   <ItemGroup>
     <ClCompile Include="src\main.c" />
     <ClCompile Include="src\mem.c" />
+    <ClCompile Include="src\render.c" />
     <ClCompile Include="src\sources\backup.c" />
     <ClCompile Include="src\sources\live.c" />
+    <ClCompile Include="src\sources\textfile.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\mem.h" />
+    <ClInclude Include="include\render.h" />
     <ClInclude Include="include\sources\backup.h" />
     <ClInclude Include="include\sources\live.h" />
+    <ClInclude Include="include\sources\textfile.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>

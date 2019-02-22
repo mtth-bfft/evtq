@@ -7,15 +7,24 @@
 int open_source_backup(PWSTR swzAbsolutePath)
 {
 	int res = 0;
+	HANDLE hLog = NULL;
 	HANDLE hFeed = NULL;
 	HANDLE hEvent = NULL;
 	DWORD dwEvtCount = 0;
 
-	hFeed = EvtOpenLog(NULL, swzAbsolutePath, EvtOpenFilePath);
+	hLog = EvtOpenLog(NULL, swzAbsolutePath, EvtOpenFilePath);
+	if (hLog == NULL)
+	{
+		res = GetLastError();
+		_ftprintf(stderr, TEXT("Error: unable to open log file %ws metadata, code %u\n"), swzAbsolutePath, res);
+		goto cleanup;
+	}
+
+	hFeed = EvtQuery(NULL, swzAbsolutePath, NULL, EvtQueryFilePath | EvtQueryForwardDirection);
 	if (hFeed == NULL)
 	{
 		res = GetLastError();
-		_ftprintf(stderr, TEXT("Error: unable to connect to remote host, code %u\n"), res);
+		_ftprintf(stderr, TEXT("Error: unable to open log file %ws, code %u\n"), swzAbsolutePath, res);
 		goto cleanup;
 	}
 
@@ -31,6 +40,8 @@ int open_source_backup(PWSTR swzAbsolutePath)
 	}
 
 cleanup:
+	if (hLog != NULL)
+		EvtClose(hLog);
 	if (hFeed != NULL)
 		EvtClose(hFeed);
 	return res;

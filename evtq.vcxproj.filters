@@ -27,6 +27,12 @@
     <ClCompile Include="src\sources\backup.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\sources\textfile.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\sources\live.h">
@@ -36,6 +42,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\sources\backup.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\sources\textfile.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\render.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
