@@ -1,5 +1,6 @@
 #include <tchar.h>
 #include <stdio.h>
+#include "mem.h"
 #include "sources/live.h"
 #include "sources/backup.h"
 
@@ -70,6 +71,8 @@ int _tmain(int argc, TCHAR* argv[])
 				return 1;
 			}
 			swzProvidersPath = (arg[11] == TEXT('=')) ? &(arg[11]) : argv[++i];
+			res = map_file_readonly(swzProvidersPath, &swzProviders, &dwProvidersLen);
+
 		}
 		else if (_tcsnicmp(arg, TEXT("--host"), 6) == 0)
 		{
@@ -142,7 +145,7 @@ int _tmain(int argc, TCHAR* argv[])
 			swzFieldMapPath = _tcsstr(swzOutputPath, TEXT(","));
 			if (swzFieldMapPath == NULL)
 			{
-				_ftprintf(stderr, TEXT("Error: CSV output requires both <output file>,<field map> paths\n"));
+				_ftprintf(stderr, TEXT("Error: TSV output requires both <output file>,<field map> paths\n"));
 				print_usage();
 				return 1;
 			}
