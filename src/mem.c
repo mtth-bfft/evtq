@@ -36,6 +36,14 @@ PVOID safe_dup(const VOID *pBuf, SIZE_T dwBytes)
 	return pRes;
 }
 
+PSTR safe_strdup(PCSTR pBuf)
+{
+    SIZE_T dwLen = strlen(pBuf);
+    PSTR pRes = (PSTR)safe_alloc(dwLen + 1);
+    memcpy(pRes, pBuf, dwLen);
+    return pRes;
+}
+
 VOID safe_free(PVOID pBuf)
 {
 	if (pBuf == NULL || !HeapFree(GetProcessHeap(), 0, pBuf))
@@ -45,51 +53,52 @@ VOID safe_free(PVOID pBuf)
 	}
 }
 
-int map_file_readonly(PCTSTR swzFilePath, PVOID *ppBuf, PSIZE_T pdwBufLen)
+PSTR safe_strconv(PCWSTR swzWide, int len)
 {
-	int res = 0;
-	HANDLE hFile = INVALID_HANDLE_VALUE;
-	LARGE_INTEGER liFileSize = { 0 };
-	HANDLE hFileMap = NULL;
-	PVOID pBuf = NULL;
+   int buf_len = -1;
+   PSTR szResult = NULL;
+   
+   buf_len = WideCharToMultiByte(CP_UTF8, 0, swzWide, len, NULL, 0, NULL, NULL);
+   if (buf_len <= 0)
+      return safe_strdup("");
+   szResult = (LPSTR)safe_alloc(buf_len + 1);
+   if (WideCharToMultiByte(CP_UTF8, 0, swzWide, len, szResult, buf_len + 1, NULL, NULL) <= 0)
+      return safe_strdup("<UTF16 conversion failed>");
+   return szResult;
+}
 
-	hFile = CreateFile(swzFilePath, GENERIC_READ, FILE_SHARE_READ, NULL,
-		OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
-	if (hFile == INVALID_HANDLE_VALUE)
-	{
-		res = GetLastError();
-		_ftprintf(stderr, TEXT(" [!] Could not open file '%s': code %u\n"), swzFilePath, res);
-		goto cleanup;
-	}
-	if (!GetFileSizeEx(hFile, &liFileSize))
-	{
-		res = GetLastError();
-		_ftprintf(stderr, TEXT(" [!] Could not get '%s' size: code %u\n"), swzFilePath, res);
-		goto cleanup;
-	}
-	hFileMap = CreateFileMappingNuma(hFile, NULL, PAGE_READONLY, 0, 0, NULL, NUMA_NO_PREFERRED_NODE);
-	if (hFileMap == NULL)
-	{
-		res = GetLastError();
-		_ftprintf(stderr, TEXT(" [!] Could not map file '%s': code %u\n"), swzFilePath, res);
-		goto cleanup;
-	}
-	pBuf = MapViewOfFileExNuma(hFileMap, FILE_MAP_READ, 0, 0, 0, NULL, NUMA_NO_PREFERRED_NODE);
-	if (pBuf == NULL)
-	{
-		res = GetLastError();
-		_ftprintf(stderr, TEXT(" [!] Could not map view of '%s': code %u\n"), swzFilePath, res);
-		goto cleanup;
-	}
-	*ppBuf = pBuf;
-	*pdwBufLen = liFileSize.QuadPart;
+PSTR sprintf_alloc(PCSTR szFormat, ...)
+{
+   va_list va_args;
+   int bytes_req = 0;
+   PSTR pBuffer = NULL;
 
-cleanup:
-	if (pBuf != NULL)
-		UnmapViewOfFile(pBuf);
-	if (hFileMap != NULL)
-		CloseHandle(hFileMap);
-	if (hFile != INVALID_HANDLE_VALUE)
-		CloseHandle(hFile);
-	return res;
+   va_start(va_args, szFormat);
+   pBuffer = (PSTR)safe_alloc(FIRST_TRY_RENDERING_BUF_LEN + 1);
+   bytes_req = vsnprintf(pBuffer, FIRST_TRY_RENDERING_BUF_LEN, szFormat, va_args);
+   va_end(va_args);
+   if (bytes_req >= 0 && bytes_req + 1 <= FIRST_TRY_RENDERING_BUF_LEN)
+   {
+      return pBuffer;
+   }
+   else if (bytes_req < 0)
+   {
+      _ftprintf(stderr, TEXT("Error: failed to format string: sprintf(\"%hs\")\n"), szFormat);
+      safe_free(pBuffer);
+      return NULL;
+   }
+   pBuffer = (PSTR)safe_realloc(pBuffer, bytes_req + 1);
+   va_start(va_args, szFormat);
+   bytes_req = vsnprintf(pBuffer, bytes_req + 1, szFormat, va_args);
+   va_end(va_args);
+   if (bytes_req > 0)
+   {
+      return pBuffer;
+   }
+   else
+   {
+      _ftprintf(stderr, TEXT("Error: failed to format string (2): sprintf(\"%hs\")\n"), szFormat);
+      safe_free(pBuffer);
+      return NULL;
+   }
 }

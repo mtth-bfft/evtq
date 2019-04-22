@@ -2,16 +2,19 @@
 #include <tchar.h>
 #include <winevt.h>
 #include <stdio.h>
-#include "sources/live.h"
+#include "inputs/live.h"
+#include "main.h"
 #include "mem.h"
 
 static LONG64 dwEventCount = 0;
 
-DWORD WINAPI callback_source_live(EVT_SUBSCRIBE_NOTIFY_ACTION Action, PVOID pContext, EVT_HANDLE hEvent)
+DWORD WINAPI callback_source_live(EVT_SUBSCRIBE_NOTIFY_ACTION Action, PVOID _pContext, EVT_HANDLE hEvent)
 {
+   (void)(_pContext);
+
 	if (Action != EvtSubscribeActionDeliver)
 	{
-		printf(" [!] Received error %zu\n", (SIZE_T)hEvent);
+		printf(" [!] Unable to read event from source: error code %zu \n", (SIZE_T)hEvent);
 		return 0;
 	}
 
@@ -20,9 +23,7 @@ DWORD WINAPI callback_source_live(EVT_SUBSCRIBE_NOTIFY_ACTION Action, PVOID pCon
 	// in push subscription to detect the end of stream)
 	_InlineInterlockedAdd64(&dwEventCount, 1);
 
-	(void)(hEvent);
-	(void)(pContext);
-	printf(".");
+   render_event_callback(hEvent);
 	return 0;
 }
 
@@ -69,15 +70,17 @@ int open_source_live(PWSTR swzHostname, PWSTR swzDomain, PWSTR swzUser, PWSTR sw
 
 	while (EvtNextChannelPath(hChannelEnum, dwChannelLen, swzChannel, &dwBytesRequired))
 	{
-		HANDLE hFeed = EvtSubscribe(hSession, NULL, swzChannel, NULL, NULL, NULL, &callback_source_live, EvtSubscribeStartAtOldestRecord | EvtSubscribeStrict);
+		HANDLE hFeed = EvtSubscribe(hSession, NULL, swzChannel, NULL, NULL, NULL, &callback_source_live,
+         (bFollow ? EvtSubscribeToFutureEvents : EvtSubscribeStartAtOldestRecord));
 		if (hFeed == NULL)
 		{
 			if (GetLastError() == ERROR_EVT_SUBSCRIPTION_TO_DIRECT_CHANNEL)
 				continue; // skip silently channels that can't be subscribed to
-			_ftprintf(stderr, TEXT("Error: unable to subscribe to events, code %u\n"), GetLastError());
+         if (verbosity > 0)
+			   _ftprintf(stderr, TEXT("Error: unable to subscribe to events on '%ws', code %u\n"), swzChannel, GetLastError());
 		}
 		dwChannelCount++;
-		phFeed = safe_realloc(phFeed, sizeof(HANDLE) * dwChannelCount);
+		phFeed = (PHANDLE)safe_realloc(phFeed, sizeof(HANDLE) * dwChannelCount);
 		phFeed[dwChannelCount - 1] = hFeed;
 	}
 	if (GetLastError() != ERROR_NO_MORE_ITEMS)
@@ -87,7 +90,8 @@ int open_source_live(PWSTR swzHostname, PWSTR swzDomain, PWSTR swzUser, PWSTR sw
 		goto cleanup;
 	}
 
-	printf("Waiting for the end...\n");
+   if (verbosity > 0)
+	   printf("Waiting for the end...\n");
 
 	if (bFollow)
 	{

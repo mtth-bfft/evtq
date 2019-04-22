@@ -1,4 +1,6 @@
 *.vcxproj.user
+*.aps
 /.vs/
 /x64/
 /x86/
+/Win32/
