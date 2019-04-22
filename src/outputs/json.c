@@ -11,24 +11,15 @@
 
 static json_t* render_field_as_json(PEVT_VARIANT pField);
 
-int render_event_json(FILE *out, EVT_HANDLE hEvent)
+int render_event_json(FILE *out, EVT_HANDLE hEvent, PEVT_VARIANT pSysProps)
 {
     int res = 0;
-    EVT_HANDLE hContextSystem = NULL;
     EVT_HANDLE hContextUser = NULL;
-    PEVT_VARIANT pSysProps = NULL;
     PEVT_VARIANT pUserProps = NULL;
     DWORD dwBufferSize = 0;
-    DWORD dwPropertyCount = 0;
+    DWORD dwUserPropsCount = 0;
     json_t *pObj = NULL;
 
-    hContextSystem = EvtCreateRenderContext(0, NULL, EvtRenderContextSystem);
-    if (hContextSystem == NULL)
-    {
-        res = GetLastError();
-        _ftprintf(stderr, TEXT("Error: unable to create system rendering context, code %u\n"), res);
-        goto cleanup;
-    }
     hContextUser = EvtCreateRenderContext(0, NULL, EvtRenderContextUser);
     if (hContextUser == NULL)
     {
@@ -36,24 +27,9 @@ int render_event_json(FILE *out, EVT_HANDLE hEvent)
         _ftprintf(stderr, TEXT("Error: unable to create user rendering context, code %u\n"), res);
         goto cleanup;
     }
-    if (EvtRender(hContextSystem, hEvent, EvtRenderEventValues, 0, NULL, &dwBufferSize, &dwPropertyCount) ||
-        GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+    if (EvtRender(hContextUser, hEvent, EvtRenderEventValues, 0, NULL, &dwBufferSize, &dwUserPropsCount))
     {
-        res = GetLastError();
-        _ftprintf(stderr, TEXT("Error: unable to render event system values, code %u\n"), res);
-        goto cleanup;
-    }
-    pSysProps = (PEVT_VARIANT)safe_alloc(dwBufferSize);
-    if (!EvtRender(hContextSystem, hEvent, EvtRenderEventValues, dwBufferSize, pSysProps, &dwBufferSize, &dwPropertyCount))
-    {
-        res = GetLastError();
-        _ftprintf(stderr, TEXT("Error: unable to render event system values, code %u\n"), res);
-        goto cleanup;
-    }
-
-    if (EvtRender(hContextUser, hEvent, EvtRenderEventValues, 0, NULL, &dwBufferSize, &dwPropertyCount))
-    {
-        dwPropertyCount = 0;
+        dwUserPropsCount = 0;
     }
     else
     {
@@ -64,7 +40,7 @@ int render_event_json(FILE *out, EVT_HANDLE hEvent)
             goto cleanup;
         }
         pUserProps = (PEVT_VARIANT)safe_alloc(dwBufferSize);
-        if (!EvtRender(hContextUser, hEvent, EvtRenderEventValues, dwBufferSize, pUserProps, &dwBufferSize, &dwPropertyCount))
+        if (!EvtRender(hContextUser, hEvent, EvtRenderEventValues, dwBufferSize, pUserProps, &dwBufferSize, &dwUserPropsCount))
         {
             res = GetLastError();
             _ftprintf(stderr, TEXT("Error: unable to render event user values, code %u\n"), res);
@@ -80,7 +56,7 @@ int render_event_json(FILE *out, EVT_HANDLE hEvent)
     json_object_set_new(pObj, "eventid", json_integer(pSysProps[EvtSystemEventID].UInt16Val));
     json_object_set_new(pObj, "version", json_integer(pSysProps[EvtSystemVersion].ByteVal));
     
-    for (DWORD dwProp = 0; dwProp < dwPropertyCount; dwProp++)
+    for (DWORD dwProp = 0; dwProp < dwUserPropsCount; dwProp++)
     {
        CHAR szDefaultFieldName[30] = { 0 };
        PCSTR szFieldName = szDefaultFieldName;
@@ -100,8 +76,6 @@ int render_event_json(FILE *out, EVT_HANDLE hEvent)
     res = end_render_output();
 
 cleanup:
-    if (hContextSystem != NULL)
-        EvtClose(hContextSystem);
     if (hContextUser != NULL)
         EvtClose(hContextUser);
     return 0;

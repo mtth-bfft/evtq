@@ -1,6 +1,8 @@
 #include <Windows.h>
 #include <tchar.h>
 #include <stdio.h>
+#include <unordered_map>
+#include <algorithm>
 #include "main.h"
 #include "mem.h"
 #include "metadata.h"
@@ -11,10 +13,15 @@
 #include "outputs/xml.h"
 #include "outputs/json.h"
 
+static std::unordered_map<std::string, LONGLONG> eventStatistics;
+static HANDLE ghStatsMutex = INVALID_HANDLE_VALUE;
+
 BOOL bAppend = FALSE;
 BOOL bEver = FALSE;
 BOOL bGzip = FALSE;
-long eventCount = 0;
+BOOL bDisplayStats = FALSE;
+LONGLONG dwMaxEvents = 0;
+__declspec(align(8)) LONGLONG dwProcessedEvents = 0;
 int verbosity = 0;
 input_t input = INPUT_DEFAULT;
 output_t output = OUTPUT_DEFAULT;
@@ -22,10 +29,10 @@ FILE *fOutput = NULL;
 
 static void print_usage()
 {
-    _ftprintf(stderr, TEXT("Usage: evtq [input] [output] [options]\n"));
+    _ftprintf(stderr, TEXT("evtq [input] [output] [options]\n"));
     _ftprintf(stderr, TEXT("\n"));
-    _ftprintf(stderr, TEXT("Input : default is all local eventlogs\n"));
-    _ftprintf(stderr, TEXT("  --from-host [[domain/]username[:password]@]<hostname>\n"));
+    _ftprintf(stderr, TEXT("Input : default is to query all local eventlogs\n"));
+    _ftprintf(stderr, TEXT("  --from-host [[domain/]username:password@]<hostname>\n"));
     _ftprintf(stderr, TEXT("  --from-evtx <filename>.evtx\n"));
     _ftprintf(stderr, TEXT("  --from-evt  <filename>.evt\n"));
     _ftprintf(stderr, TEXT("\n"));
@@ -36,19 +43,19 @@ static void print_usage()
     _ftprintf(stderr, TEXT("  --to-json [filename]\n"));
     _ftprintf(stderr, TEXT("\n"));
     _ftprintf(stderr, TEXT("Options:\n"));
-    _ftprintf(stderr, TEXT("  -h --help              display this help text\n"));
-    _ftprintf(stderr, TEXT("  -v --verbose           increase verbosity(can be repeated)\n"));
-    _ftprintf(stderr, TEXT("  -a --append            append to output files, don't truncate\n"));
-    _ftprintf(stderr, TEXT("  -e --ever              for live inputs, dump existing events instead of new ones\n"));
-    _ftprintf(stderr, TEXT("  -i --import-providers <list.json>   JSON file with known events and field names\n"));
-    _ftprintf(stderr, TEXT("  -e --export-providers <list.json>   write the host's registered publishers to disk\n"));
-    _ftprintf(stderr, TEXT("  -z --gzip              compress output with gzip\n"));
-    _ftprintf(stderr, TEXT("  -f --filter[!][channel]/[provider]/[eventID]/[version]\n"));
-    _ftprintf(stderr, TEXT("         only show events matching(or not matching, if prefixed with !)\n"));
-    _ftprintf(stderr, TEXT("         (use * as wildcards) (can be repeated)\n"));
-    _ftprintf(stderr, TEXT("  -s --stats             display statistics about event counts at the end\n"));
-    _ftprintf(stderr, TEXT("  -n <number>            only output N events\n"));
-    _ftprintf(stderr, TEXT("\n"));
+    _ftprintf(stderr, TEXT("  -h --help                       display this help text\n"));
+    _ftprintf(stderr, TEXT("  -v --verbose                    increase verbosity(can be repeated)\n"));
+    _ftprintf(stderr, TEXT("  -a --append                     append to output files, don't truncate\n"));
+    _ftprintf(stderr, TEXT("  -e --ever                       for live inputs, dump existing events instead of new ones\n"));
+    _ftprintf(stderr, TEXT("  -i --import-providers <x.json>  JSON file with known events and field names\n"));
+    _ftprintf(stderr, TEXT("  -e --export-providers <x.json>  write the host's registered publishers to disk\n"));
+    _ftprintf(stderr, TEXT("  -s --stats                      display statistics about event counts at the end\n"));
+    _ftprintf(stderr, TEXT("  -n --only <number>              stop after writing a given number of events\n"));
+    _ftprintf(stderr, TEXT("  [work in progress features:]\n"));
+    _ftprintf(stderr, TEXT("  -z --gzip                       compress output with gzip\n"));
+    _ftprintf(stderr, TEXT("  -f --filter [!][channel]/[provider]/[eventID]/[version]\n"));
+    _ftprintf(stderr, TEXT("         only show events matching (or not matching, if prefixed with !)\n"));
+    _ftprintf(stderr, TEXT("         (use * as wildcards) (can be repeated)\n\n"));
 }
 
 int render_event_callback(EVT_HANDLE hEvent)
@@ -56,8 +63,16 @@ int render_event_callback(EVT_HANDLE hEvent)
    int res = 0;
    EVT_HANDLE hContextSystem = NULL;
    DWORD dwBufferSize = 0;
-   DWORD dwPropertyCount = 0;
+   DWORD dwSysPropsCount = 0;
    PEVT_VARIANT pSysProps = NULL;
+   LONGLONG dwNowProcessedEvents = InterlockedIncrement64(&dwProcessedEvents);
+   CHAR szHashKey[255] = { 0 };
+   DWORD dwWait = 0;
+
+   if (dwMaxEvents != 0 && dwNowProcessedEvents > dwMaxEvents)
+   {
+       return 0;
+   }
 
    // First, extract common "system" properties for statistics and filtering
    hContextSystem = EvtCreateRenderContext(0, NULL, EvtRenderContextSystem);
@@ -67,7 +82,7 @@ int render_event_callback(EVT_HANDLE hEvent)
        _ftprintf(stderr, TEXT("Error: unable to create system rendering context, code %u\n"), res);
        goto cleanup;
    }
-   if (EvtRender(hContextSystem, hEvent, EvtRenderEventValues, 0, NULL, &dwBufferSize, &dwPropertyCount) ||
+   if (EvtRender(hContextSystem, hEvent, EvtRenderEventValues, 0, NULL, &dwBufferSize, &dwSysPropsCount) ||
        GetLastError() != ERROR_INSUFFICIENT_BUFFER)
    {
        res = GetLastError();
@@ -75,38 +90,69 @@ int render_event_callback(EVT_HANDLE hEvent)
        goto cleanup;
    }
    pSysProps = (PEVT_VARIANT)safe_alloc(dwBufferSize);
-   if (!EvtRender(hContextSystem, hEvent, EvtRenderEventValues, dwBufferSize, pSysProps, &dwBufferSize, &dwPropertyCount))
+   if (!EvtRender(hContextSystem, hEvent, EvtRenderEventValues, dwBufferSize, pSysProps, &dwBufferSize, &dwSysPropsCount))
    {
        res = GetLastError();
        _ftprintf(stderr, TEXT("Error: unable to render event system values, code %u\n"), res);
        goto cleanup;
    }
 
+   sprintf_s(szHashKey, 255, "%ws-%u-%u", pSysProps[EvtSystemProviderName].StringVal, pSysProps[EvtSystemEventID].UInt16Val, pSysProps[EvtSystemVersion].ByteVal);
+
+   dwWait = WaitForSingleObject(ghStatsMutex, INFINITE);
+   if (dwWait != WAIT_OBJECT_0)
+   {
+       res = GetLastError();
+       _ftprintf(stderr, TEXT(" [!] Error while waiting to acquire statistics mutex, code %u\n"), res);
+   }
+   if (eventStatistics.count(szHashKey) == 0)
+   {
+       eventStatistics[szHashKey] = 1;
+   }
+   else
+   {
+       eventStatistics[szHashKey]++;
+   }
+   if (!ReleaseMutex(ghStatsMutex))
+   {
+       res = GetLastError();
+       _ftprintf(stderr, TEXT(" [!] Error while releasing statistics mutex, code %u\n"), res);
+   }
+
    if (output == OUTPUT_TSV)
-       res = render_event_tsv(fOutput, hEvent);
+       res = render_event_tsv(fOutput, hEvent, pSysProps);
    else if (output == OUTPUT_XML)
        res = render_event_xml(fOutput, hEvent);
    else if (output == OUTPUT_JSON)
-       res = render_event_json(fOutput, hEvent);
+       res = render_event_json(fOutput, hEvent, pSysProps);
 
 cleanup:
    if (pSysProps != NULL)
        safe_free(pSysProps);
+   if (hContextSystem != NULL)
+       EvtClose(hContextSystem);
    return res;
 }
 
 int _tmain(int argc, TCHAR* argv[])
 {
-	int res = 0;
+    int res = 0;
     BOOL bExportAction = FALSE;
-	PWSTR swzInputPath = NULL;
-	PWSTR swzOutputPath = NULL;
+    PCTSTR swzInputPath = NULL;
+    PCTSTR swzOutputPath = NULL;
 
-   init_render_output();
+    init_render_output();
+
+    ghStatsMutex = CreateMutex(NULL, FALSE, NULL);
+    if (ghStatsMutex == NULL)
+    {
+        res = GetLastError();
+        _ftprintf(stderr, TEXT("Error: unable to create mutex, code %u\n"), res);
+    }
 
    for (int i = 1; i < argc; i++)
    {
-      TCHAR *arg = argv[i];
+       PCTSTR arg = argv[i];
       if (_tcsicmp(arg, TEXT("-h")) == 0 || _tcsicmp(arg, TEXT("--help")) == 0)
       {
          print_usage();
@@ -114,7 +160,7 @@ int _tmain(int argc, TCHAR* argv[])
       }
       else if (_tcsicmp(arg, TEXT("-f")) == 0 || _tcsnicmp(arg, TEXT("--filter"), 8) == 0)
       {
-         PWSTR swzFilter = (arg[8] == TEXT('=')) ? &(arg[9]) : argv[++i];
+         PCTSTR swzFilter = (arg[8] == TEXT('=')) ? &(arg[9]) : argv[++i];
          //TODO: register filter in hash table ()
          (void)(swzFilter);
       }
@@ -134,15 +180,21 @@ int _tmain(int argc, TCHAR* argv[])
       {
          verbosity++;
       }
-      else if (_tcsicmp(arg, TEXT("-n")) == 0)
+      else if (_tcsicmp(arg, TEXT("-s")) == 0 || _tcsicmp(arg, TEXT("--stats")) == 0)
       {
-         PWSTR swzNum = argv[++i];
-         if (swzNum == NULL || (eventCount = _tcstol(swzNum, NULL, 10)) <= 0)
+          bDisplayStats = TRUE;
+      }
+      else if (_tcsicmp(arg, TEXT("-n")) == 0 || _tcsicmp(arg, TEXT("--only")) == 0)
+      {
+          PCTSTR swzNum = argv[++i];
+         LONGLONG llEventCount = -1;
+         if (swzNum == NULL || (llEventCount = _tcstoll(swzNum, NULL, 10)) <= 0)
          {
             _ftprintf(stderr, TEXT("Error: an integer is required after -n\n"));
             print_usage();
             return 1;
          }
+         dwMaxEvents = llEventCount;
       }
       else if (_tcsnicmp(arg, TEXT("--import-publishers"), 19) == 0)
       {
@@ -306,6 +358,66 @@ int _tmain(int argc, TCHAR* argv[])
    else if (input == INPUT_EVT || input == INPUT_EVTX)
    {
        res = open_source_backup(swzInputPath);
+   }
+   else if (input == INPUT_REMOTEHOST)
+   {
+       // Parse domain, username, password and hostname from swzInputPath
+       //PTSTR authString = (PTSTR)safe_dup(swzInputPath, (_tcslen(swzInputPath) + 1) * sizeof(TCHAR));
+       PTSTR swzHostname = NULL;
+       PTSTR swzDomain = NULL;
+       PTSTR swzUsername = NULL;
+       PTSTR swzPassword = NULL;
+       for (swzHostname = (PTSTR)swzInputPath + _tcslen(swzInputPath) - 1; swzHostname >= swzInputPath; swzHostname--)
+       {
+           if (*swzHostname == TEXT('@'))
+           {
+               *swzHostname = TEXT('\0');
+               break;
+           }
+       }
+       swzHostname++;
+       swzDomain = (PTSTR)_tcsstr(swzInputPath, TEXT("/"));
+       if (swzDomain != NULL)
+       {
+           PCTSTR swzTmp = swzInputPath;
+           *swzDomain = TEXT('\0');
+           swzInputPath = swzDomain + 1;
+           swzDomain = (PTSTR)swzTmp;
+       }
+       if (swzInputPath < swzHostname - 1)
+       {
+           swzPassword = (PTSTR)_tcsstr(swzInputPath, TEXT(":"));
+           if (swzPassword == NULL)
+           {
+               _ftprintf(stderr, TEXT("Error: for remote connections, an explicit username requires a password\n"));
+               print_usage();
+               return 1;
+           }
+           *swzPassword = TEXT('\0');
+           swzPassword++;
+           swzUsername = (PTSTR)swzInputPath;
+       }
+       _tprintf(TEXT(" [.] Connecting to '%s' as %s@%s\n"), swzHostname, swzUsername, swzDomain);
+       res = open_source_live(swzHostname, swzDomain, swzUsername, swzPassword, !bEver);
+   }
+
+   if (bDisplayStats)
+   {
+       std::vector<std::pair<std::string, LONGLONG>> vec;
+       // copy key-value pairs from unordered map into the vector
+       std::copy(eventStatistics.begin(),
+           eventStatistics.end(),
+           std::back_inserter<std::vector<std::pair<std::string, LONGLONG>>>(vec));
+
+       // sort the vector by increasing order of its pair's second value then first value
+       std::sort(vec.begin(), vec.end(),
+           [](const std::pair<std::string, LONGLONG>& l, const std::pair<std::string, LONGLONG>& r) {
+           return (l.second > r.second) || (l.second == r.second && l.first > r.first);
+       });
+       _ftprintf(stderr, TEXT(" [.] Statistics:\n"));
+       for (auto& it : vec) {
+           _ftprintf(stderr, TEXT("%lld\t%hs\n"), it.second, it.first.c_str());
+       }
    }
 
 	return res;

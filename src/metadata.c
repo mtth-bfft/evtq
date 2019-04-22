@@ -2,18 +2,16 @@
 #include <winevt.h>
 #include <tchar.h>
 #include <stdio.h>
-#include <map>
+#include <unordered_map>
 #include <vector>
 #include <jansson.h>
 #include "mem.h"
 #include "metadata.h"
 
-// This is the only C++ part of the codebase. A hashmap from strings
-// (<providername>-<eventid>-<version>) to vectors of strings (field names).
-// No need to wrap accesses to this map through a mutex, as it is initialized
-// at start time and then only used read-only.
-static std::map<std::string, std::vector<std::string>> knownFieldNames;
-
+// Hashmap from strings (<providername>-<eventid>-<version>) to vectors of strings
+// (field names) and integers. No need to wrap accesses to this map through a mutex,
+// as it is initialized at start time and then only used read-only.
+static std::unordered_map<std::string, std::vector<std::string>> knownFieldNames;
 static BOOL bInitFromSystemDone = FALSE;
 
 static int init_fieldnames_from_system_event(PCWSTR swzPublisherName, EVT_HANDLE hEvent);
@@ -21,7 +19,7 @@ static int init_fieldnames_from_system_event(PCWSTR swzPublisherName, EVT_HANDLE
 int export_fieldnames_to_file(PCTSTR swzFilePath)
 {
     int res = 0;
-    std::map<std::string, std::vector<std::string>>::iterator it;
+    std::unordered_map<std::string, std::vector<std::string>>::iterator it;
     json_t *jMap = json_object();
     FILE *fExport = NULL;
 
@@ -135,9 +133,11 @@ int init_fieldnames_from_system()
    if (hPublishers == NULL)
    {
       res = GetLastError();
-      _ftprintf(stderr, TEXT("Warning: unable to enumerate publishers, code %u\n"), res);
+      _ftprintf(stderr, TEXT(" [!] Warning: unable to enumerate publishers, code %u\n"), res);
       goto cleanup;
    }
+
+   _tprintf(TEXT(" [.] Initialising publisher metadata from system\n"));
 
    while (1)
    {
@@ -155,20 +155,20 @@ int init_fieldnames_from_system()
          }
          else
          {
-            _ftprintf(stderr, TEXT("Warning: unable to get next publisher name, code %u\n"), GetLastError());
+            _ftprintf(stderr, TEXT(" [!] Warning: unable to get next publisher name, code %u\n"), GetLastError());
             break;
          }
       }
       hPublisher = EvtOpenPublisherMetadata(NULL, swzPublisherName, NULL, 0, 0);
       if (hPublisher == NULL)
       {
-         _ftprintf(stderr, TEXT("Warning: unable to query provider '%ws' metadata, code %u\n"), swzPublisherName, GetLastError());
+         _ftprintf(stderr, TEXT(" [!] Warning: unable to query provider '%ws' metadata, code %u\n"), swzPublisherName, GetLastError());
          continue;
       }
       hPublisherEvents = EvtOpenEventMetadataEnum(hPublisher, 0);
       if (hPublisherEvents == NULL)
       {
-         _ftprintf(stderr, TEXT("Warning: unable to query provider '%ws' events, code %u\n"), swzPublisherName, GetLastError());
+         _ftprintf(stderr, TEXT(" [!] Warning: unable to query provider '%ws' events, code %u\n"), swzPublisherName, GetLastError());
          EvtClose(hPublisher);
          continue;
       }
@@ -178,7 +178,7 @@ int init_fieldnames_from_system()
          if (hEvent == NULL)
          {
             if (GetLastError() != ERROR_NO_MORE_ITEMS)
-               _ftprintf(stderr, TEXT("Warning: unable to query provider '%ws' event, code %u\n"), swzPublisherName, res);
+               _ftprintf(stderr, TEXT(" [!] Warning: unable to query provider '%ws' event, code %u\n"), swzPublisherName, GetLastError());
             break;
          }
          init_fieldnames_from_system_event(swzPublisherName, hEvent);
@@ -187,7 +187,7 @@ int init_fieldnames_from_system()
       EvtClose(hPublisher);
    }
 
-   printf(" [.] Done initializing\n");
+   _ftprintf(stderr, TEXT(" [.] Done initializing\n"));
 
 cleanup:
    if (hPublishers != NULL)
@@ -209,26 +209,26 @@ static int init_fieldnames_from_system_event(PCWSTR swzPublisherName, EVT_HANDLE
    if (!EvtGetEventMetadataProperty(hEvent, EventMetadataEventID, 0, dwEventIDBufLen, (PEVT_VARIANT)&bufEventID, &dwEventIDBufLen))
    {
       res = GetLastError();
-      _ftprintf(stderr, TEXT("Warning: unable to query event ID from publisher '%s', code %u\n"), swzPublisherName, res);
+      _ftprintf(stderr, TEXT(" [!] Warning: unable to query event ID from publisher '%s', code %u\n"), swzPublisherName, res);
       goto cleanup;
    }
    if (!EvtGetEventMetadataProperty(hEvent, EventMetadataEventVersion, 0, dwEventVersionBufLen, (PEVT_VARIANT)&bufEventVersion, &dwEventVersionBufLen))
    {
       res = GetLastError();
-      _ftprintf(stderr, TEXT("Warning: unable to query event version from publisher '%s', code %u\n"), swzPublisherName, res);
+      _ftprintf(stderr, TEXT(" [!] Warning: unable to query event version from publisher '%s', code %u\n"), swzPublisherName, res);
       goto cleanup;
    }
    if (!EvtGetEventMetadataProperty(hEvent, EventMetadataEventTemplate, 0, 0, NULL, &dwEventTemplateBufLen) && GetLastError() != ERROR_INSUFFICIENT_BUFFER)
    {
       res = GetLastError();
-      _ftprintf(stderr, TEXT("Warning: unable to query event template from publisher '%s', code %u\n"), swzPublisherName, res);
+      _ftprintf(stderr, TEXT(" [!] Warning: unable to query event template from publisher '%s', code %u\n"), swzPublisherName, res);
       goto cleanup;
    }
    pEventTemplate = (PEVT_VARIANT)safe_alloc(dwEventTemplateBufLen);
    if (!EvtGetEventMetadataProperty(hEvent, EventMetadataEventTemplate, 0, dwEventTemplateBufLen, pEventTemplate, &dwEventTemplateBufLen))
    {
       res = GetLastError();
-      _ftprintf(stderr, TEXT("Warning: unable to query event template from publisher '%s', code %u\n"), swzPublisherName, res);
+      _ftprintf(stderr, TEXT(" [!] Warning: unable to query event template from publisher '%s', code %u\n"), swzPublisherName, res);
       goto cleanup;
    }
 
@@ -243,7 +243,7 @@ static int init_fieldnames_from_system_event(PCWSTR swzPublisherName, EVT_HANDLE
          swzFieldNameEnd = wcsstr(swzFieldNameStart, L"\"");
          if (swzFieldNameEnd == NULL)
          {
-            _ftprintf(stderr, TEXT("Warning: unable to parse template from publisher '%s' event %u version %u\n"),
+            _ftprintf(stderr, TEXT(" [!] Warning: unable to parse template from publisher '%s' event %u version %u\n"),
                swzPublisherName, ((PEVT_VARIANT)&bufEventID)->UInt32Val, ((PEVT_VARIANT)&bufEventVersion)->UInt32Val);
             goto cleanup;
          }
@@ -271,7 +271,7 @@ int get_event_field_name(PCWSTR swzPublisherName, UINT32 uEventID, UINT32 uEvent
 {
    CHAR szHashKey[255] = { 0 };
    sprintf_s(szHashKey, 255, "%ws-%u-%u", swzPublisherName, uEventID, uEventVersion);
-   std::map<std::string, std::vector<std::string>>::iterator it = knownFieldNames.find(szHashKey);
+   std::unordered_map<std::string, std::vector<std::string>>::iterator it = knownFieldNames.find(szHashKey);
    if (it != knownFieldNames.end())
    {
       if (dwFieldNumber < it->second.size())

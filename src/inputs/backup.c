@@ -5,7 +5,7 @@
 #include "inputs/backup.h"
 #include "main.h"
 
-int open_source_backup(PWSTR swzAbsolutePath)
+int open_source_backup(PCTSTR swzAbsolutePath)
 {
 	int res = 0;
 	HANDLE hFeed = NULL;
@@ -16,7 +16,7 @@ int open_source_backup(PWSTR swzAbsolutePath)
 	if (hFeed == NULL)
 	{
 		res = GetLastError();
-		_ftprintf(stderr, TEXT("Error: unable to open log file '%ws', code %u\n"), swzAbsolutePath, res);
+		_ftprintf(stderr, TEXT("Error: unable to open log file '%s', code %u\n"), swzAbsolutePath, res);
 		goto cleanup;
 	}
 
@@ -27,7 +27,7 @@ int open_source_backup(PWSTR swzAbsolutePath)
 	if (GetLastError() != ERROR_NO_MORE_ITEMS)
 	{
 		res = GetLastError();
-		_ftprintf(stderr, TEXT("Error while reading events from %ws , code %u\n"), swzAbsolutePath, res);
+		_ftprintf(stderr, TEXT("Error while reading events from '%s', code %u\n"), swzAbsolutePath, res);
 		goto cleanup;
 	}
 

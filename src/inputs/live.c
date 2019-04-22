@@ -6,7 +6,7 @@
 #include "main.h"
 #include "mem.h"
 
-static LONG64 dwEventCount = 0;
+__declspec(align(8)) static LONGLONG dwEventCount = 0;
 
 DWORD WINAPI callback_source_live(EVT_SUBSCRIBE_NOTIFY_ACTION Action, PVOID _pContext, EVT_HANDLE hEvent)
 {
@@ -14,14 +14,15 @@ DWORD WINAPI callback_source_live(EVT_SUBSCRIBE_NOTIFY_ACTION Action, PVOID _pCo
 
 	if (Action != EvtSubscribeActionDeliver)
 	{
-		printf(" [!] Unable to read event from source: error code %zu \n", (SIZE_T)hEvent);
+		_ftprintf(stderr, TEXT(" [!] Unable to read event from source: error code %zu\n"), (SIZE_T)hEvent);
 		return 0;
 	}
 
 	// Bump the event count, so the main thread doesn't kill
 	// us thinking no more events are coming in (there's no proper mechanism
-	// in push subscription to detect the end of stream)
-	_InlineInterlockedAdd64(&dwEventCount, 1);
+	// in push subscription to detect the end of stream). This is stupid, but
+    // it's trivial to implement and just works.
+    InterlockedIncrement64(&dwEventCount);
 
    render_event_callback(hEvent);
 	return 0;
@@ -64,7 +65,10 @@ int open_source_live(PWSTR swzHostname, PWSTR swzDomain, PWSTR swzUser, PWSTR sw
 	if (hChannelEnum == NULL)
 	{
 		res = GetLastError();
-		_ftprintf(stderr, TEXT("Error: unable to enumerate channels, code %u\n"), res);
+        if (res == 5)
+            _ftprintf(stderr, TEXT("Error: unable to enumerate channels, access denied. Check credentials?\n"));
+		else
+            _ftprintf(stderr, TEXT("Error: unable to enumerate channels, code %u\n"), res);
 		goto cleanup;
 	}
 
@@ -91,7 +95,7 @@ int open_source_live(PWSTR swzHostname, PWSTR swzDomain, PWSTR swzUser, PWSTR sw
 	}
 
    if (verbosity > 0)
-	   printf("Waiting for the end...\n");
+	   _ftprintf(stderr, TEXT(" [.] Waiting for the end...\n"));
 
 	if (bFollow)
 	{
@@ -113,7 +117,7 @@ int open_source_live(PWSTR swzHostname, PWSTR swzDomain, PWSTR swzUser, PWSTR sw
 		}
 	}
 
-	printf("Done.\n");
+	_ftprintf(stderr, TEXT(" [.] Done.\n"));
 
 cleanup:
 	if (hSession != NULL)

@@ -3,4 +3,4 @@
 #include <winevt.h>
 #include <stdio.h>
 
-int render_event_json(FILE *out, EVT_HANDLE hEvent);
+int render_event_json(FILE *out, EVT_HANDLE hEvent, PEVT_VARIANT pSysProps);
