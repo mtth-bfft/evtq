@@ -13,72 +13,72 @@ static json_t* render_field_as_json(PEVT_VARIANT pField);
 
 int render_event_json(FILE *out, EVT_HANDLE hEvent, PEVT_VARIANT pSysProps)
 {
-    int res = 0;
-    EVT_HANDLE hContextUser = NULL;
-    PEVT_VARIANT pUserProps = NULL;
-    DWORD dwBufferSize = 0;
-    DWORD dwUserPropsCount = 0;
-    json_t *pObj = NULL;
+   int res = 0;
+   EVT_HANDLE hContextUser = NULL;
+   PEVT_VARIANT pUserProps = NULL;
+   DWORD dwBufferSize = 0;
+   DWORD dwUserPropsCount = 0;
+   json_t *pObj = NULL;
 
-    hContextUser = EvtCreateRenderContext(0, NULL, EvtRenderContextUser);
-    if (hContextUser == NULL)
-    {
-        res = GetLastError();
-        _ftprintf(stderr, TEXT("Error: unable to create user rendering context, code %u\n"), res);
-        goto cleanup;
-    }
-    if (EvtRender(hContextUser, hEvent, EvtRenderEventValues, 0, NULL, &dwBufferSize, &dwUserPropsCount))
-    {
-        dwUserPropsCount = 0;
-    }
-    else
-    {
-        if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
-        {
-            res = GetLastError();
-            _ftprintf(stderr, TEXT("Error: unable to render event user values, code %u\n"), res);
-            goto cleanup;
-        }
-        pUserProps = (PEVT_VARIANT)safe_alloc(dwBufferSize);
-        if (!EvtRender(hContextUser, hEvent, EvtRenderEventValues, dwBufferSize, pUserProps, &dwBufferSize, &dwUserPropsCount))
-        {
-            res = GetLastError();
-            _ftprintf(stderr, TEXT("Error: unable to render event user values, code %u\n"), res);
-            goto cleanup;
-        }
-    }
+   hContextUser = EvtCreateRenderContext(0, NULL, EvtRenderContextUser);
+   if (hContextUser == NULL)
+   {
+      res = GetLastError();
+      _ftprintf(stderr, TEXT("Error: unable to create user rendering context, code %u\n"), res);
+      goto cleanup;
+   }
+   if (EvtRender(hContextUser, hEvent, EvtRenderEventValues, 0, NULL, &dwBufferSize, &dwUserPropsCount))
+   {
+      dwUserPropsCount = 0;
+   }
+   else
+   {
+      if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+      {
+      res = GetLastError();
+      _ftprintf(stderr, TEXT("Error: unable to render event user values, code %u\n"), res);
+      goto cleanup;
+      }
+      pUserProps = (PEVT_VARIANT)safe_alloc(dwBufferSize);
+      if (!EvtRender(hContextUser, hEvent, EvtRenderEventValues, dwBufferSize, pUserProps, &dwBufferSize, &dwUserPropsCount))
+      {
+         res = GetLastError();
+         _ftprintf(stderr, TEXT("Error: unable to render event user values, code %u\n"), res);
+         goto cleanup;
+      }
+   }
 
-    pObj = json_object();
-    json_object_set_new(pObj, "hostname", json_string(render_field(&(pSysProps[EvtSystemComputer]))));
-    json_object_set_new(pObj, "record_number", json_integer(pSysProps[EvtSystemEventRecordId].UInt64Val));
-    json_object_set_new(pObj, "timestamp", json_string(render_field(&(pSysProps[EvtSystemTimeCreated]))));
-    json_object_set_new(pObj, "provider", json_string(render_field(&(pSysProps[EvtSystemProviderName]))));
-    json_object_set_new(pObj, "eventid", json_integer(pSysProps[EvtSystemEventID].UInt16Val));
-    json_object_set_new(pObj, "version", json_integer(pSysProps[EvtSystemVersion].ByteVal));
+   pObj = json_object();
+   json_object_set_new(pObj, "hostname", json_string(render_field(&(pSysProps[EvtSystemComputer]))));
+   json_object_set_new(pObj, "record_number", json_integer(pSysProps[EvtSystemEventRecordId].UInt64Val));
+   json_object_set_new(pObj, "timestamp", json_string(render_field(&(pSysProps[EvtSystemTimeCreated]))));
+   json_object_set_new(pObj, "provider", json_string(render_field(&(pSysProps[EvtSystemProviderName]))));
+   json_object_set_new(pObj, "eventid", json_integer(pSysProps[EvtSystemEventID].UInt16Val));
+   json_object_set_new(pObj, "version", json_integer(pSysProps[EvtSystemVersion].ByteVal));
     
-    for (DWORD dwProp = 0; dwProp < dwUserPropsCount; dwProp++)
-    {
-       CHAR szDefaultFieldName[30] = { 0 };
-       PCSTR szFieldName = szDefaultFieldName;
-       sprintf_s(szDefaultFieldName, 30, "field%u", dwProp);
-       get_event_field_name(pSysProps[EvtSystemProviderName].StringVal, pSysProps[EvtSystemEventID].UInt16Val, pSysProps[EvtSystemVersion].ByteVal, dwProp, &szFieldName);
-       json_object_set_new(pObj, szFieldName, render_field_as_json(&(pUserProps[dwProp])));
-    }
+   for (DWORD dwProp = 0; dwProp < dwUserPropsCount; dwProp++)
+   {
+      CHAR szDefaultFieldName[30] = { 0 };
+      PCSTR szFieldName = szDefaultFieldName;
+      sprintf_s(szDefaultFieldName, 30, "field%u", dwProp);
+      get_event_field_name(pSysProps[EvtSystemProviderName].StringVal, pSysProps[EvtSystemEventID].UInt16Val, pSysProps[EvtSystemVersion].ByteVal, dwProp, &szFieldName);
+      json_object_set_new(pObj, szFieldName, render_field_as_json(&(pUserProps[dwProp])));
+   }
 
-    res = begin_render_output();
-    if (res != 0)
-        goto cleanup;
+   res = begin_render_output();
+   if (res != 0)
+      goto cleanup;
 
-    // Render and write the output
-    json_dumpf(pObj, out, JSON_COMPACT);
-    fwrite("\n", 1, 1, out);
-    
-    res = end_render_output();
+   // Render and write the output
+   json_dumpf(pObj, out, JSON_COMPACT);
+   fwrite("\n", 1, 1, out);
+
+   res = end_render_output();
 
 cleanup:
-    if (hContextUser != NULL)
-        EvtClose(hContextUser);
-    return 0;
+   if (hContextUser != NULL)
+      EvtClose(hContextUser);
+   return 0;
 }
 
 static json_t* render_field_as_json(PEVT_VARIANT pField)
@@ -149,8 +149,8 @@ static json_t* render_field_as_json(PEVT_VARIANT pField)
          case EvtVarTypeFileTime:
             if (!FileTimeToSystemTime((FILETIME*)&(pField->FileTimeArr[dwArrayItem]), &sysTime))
             {
-               _ftprintf(stderr, TEXT("Error: failed to convert FileTime to SystemTime\n"));
-               json_array_append_new(pArray, json_string("<unknown date?>"));
+            _ftprintf(stderr, TEXT("Error: failed to convert FileTime to SystemTime\n"));
+            json_array_append_new(pArray, json_string("<unknown date?>"));
             }
             json_array_append_new(pArray, json_sprintf(
                "%04d-%02d-%02d %02d:%02d:%02d.%03d",

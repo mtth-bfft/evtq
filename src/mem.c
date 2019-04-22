@@ -4,53 +4,53 @@
 
 PVOID safe_alloc(SIZE_T dwBytes)
 {
-	PVOID pRes = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, dwBytes);
-	if (pRes == NULL)
-	{
-		_ftprintf(stderr, TEXT("Error: unable to allocate %zu bytes: code %u\n"),
-			dwBytes, GetLastError());
-		_exit(ERROR_OUTOFMEMORY);
-	}
-	return pRes;
+   PVOID pRes = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, dwBytes);
+   if (pRes == NULL)
+   {
+      _ftprintf(stderr, TEXT("Error: unable to allocate %zu bytes: code %u\n"),
+      dwBytes, GetLastError());
+      _exit(ERROR_OUTOFMEMORY);
+   }
+   return pRes;
 }
 
 PVOID safe_realloc(PVOID pBuf, SIZE_T dwBytes)
 {
-	PVOID pRes = NULL;
-	if (pBuf == NULL)
-		return safe_alloc(dwBytes);
-	pRes = HeapReAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, pBuf, dwBytes);
-	if (pRes == NULL)
-	{
-		_ftprintf(stderr, TEXT("Error: unable to extend allocation to %zu bytes: code %u\n"),
-			dwBytes, GetLastError());
-		_exit(ERROR_OUTOFMEMORY);
-	}
-	return pRes;
+   PVOID pRes = NULL;
+   if (pBuf == NULL)
+      return safe_alloc(dwBytes);
+   pRes = HeapReAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, pBuf, dwBytes);
+   if (pRes == NULL)
+   {
+      _ftprintf(stderr, TEXT("Error: unable to extend allocation to %zu bytes: code %u\n"),
+      dwBytes, GetLastError());
+      _exit(ERROR_OUTOFMEMORY);
+   }
+   return pRes;
 }
 
 PVOID safe_dup(const VOID *pBuf, SIZE_T dwBytes)
 {
-	PVOID pRes = safe_alloc(dwBytes);
-	memcpy(pRes, pBuf, dwBytes);
-	return pRes;
+   PVOID pRes = safe_alloc(dwBytes);
+   memcpy(pRes, pBuf, dwBytes);
+   return pRes;
 }
 
 PSTR safe_strdup(PCSTR pBuf)
 {
-    SIZE_T dwLen = strlen(pBuf);
-    PSTR pRes = (PSTR)safe_alloc(dwLen + 1);
-    memcpy(pRes, pBuf, dwLen);
-    return pRes;
+   SIZE_T dwLen = strlen(pBuf);
+   PSTR pRes = (PSTR)safe_alloc(dwLen + 1);
+   memcpy(pRes, pBuf, dwLen);
+   return pRes;
 }
 
 VOID safe_free(PVOID pBuf)
 {
-	if (pBuf == NULL || !HeapFree(GetProcessHeap(), 0, pBuf))
-	{
-		_ftprintf(stderr, TEXT("Error: tried to free %p, heap corrupted\n"), pBuf);
-		_exit(ERROR_OUTOFMEMORY);
-	}
+   if (pBuf == NULL || !HeapFree(GetProcessHeap(), 0, pBuf))
+   {
+      _ftprintf(stderr, TEXT("Error: tried to free %p, heap corrupted\n"), pBuf);
+      _exit(ERROR_OUTOFMEMORY);
+   }
 }
 
 PSTR safe_strconv(PCWSTR swzWide, int len)

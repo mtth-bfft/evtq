@@ -57,7 +57,7 @@ int render_event_tsv(FILE *out, EVT_HANDLE hEvent, PEVT_VARIANT pSysProps)
 
    res = begin_render_output();
    if (res != 0)
-       goto cleanup;
+      goto cleanup;
 
    fprintf(out, "%ws\t%" PRIu64 "\t%04u-%02u-%02u %02u:%02u:%02u.%03u\t%ws\t%u\t%u\t",
       pSysProps[EvtSystemComputer].StringVal,
@@ -79,106 +79,106 @@ int render_event_tsv(FILE *out, EVT_HANDLE hEvent, PEVT_VARIANT pSysProps)
             fwrite("[", 1, 1, out);
             for (DWORD dwArrayItem = 0; dwArrayItem < pUserProps[dwProp].Count; dwArrayItem++)
             {
-                if (dwArrayItem != 0)
-                    fwrite(",", 1, 1, out);
-                switch ((pUserProps[dwProp].Type) & ~EVT_VARIANT_TYPE_ARRAY)
-                {
-                case EvtVarTypeString:
-                    fprintf(out, "%ws", pUserProps[dwProp].StringArr[dwArrayItem]);
-                    break;
-                case EvtVarTypeAnsiString:
-                    fprintf(out, "%s", pUserProps[dwProp].AnsiStringArr[dwArrayItem]);
-                    break;
-                case EvtVarTypeSByte:
-                    fprintf(out, "%" PRIi8, pUserProps[dwProp].SByteArr[dwArrayItem]);
-                    break;
-                case EvtVarTypeByte:
-                    fprintf(out, "%" PRIu8, pUserProps[dwProp].ByteArr[dwArrayItem]);
-                    break;
-                case EvtVarTypeInt16:
-                    fprintf(out, "%" PRIi16, pUserProps[dwProp].Int16Arr[dwArrayItem]);
-                    break;
-                case EvtVarTypeUInt16:
-                    fprintf(out, "%" PRIu16, pUserProps[dwProp].UInt16Arr[dwArrayItem]);
-                    break;
-                case EvtVarTypeInt32:
-                    fprintf(out, "%" PRIi32, pUserProps[dwProp].Int32Arr[dwArrayItem]);
-                    break;
-                case EvtVarTypeUInt32:
-                    fprintf(out, "%" PRIu32, pUserProps[dwProp].UInt32Arr[dwArrayItem]);
-                    break;
-                case EvtVarTypeInt64:
-                    fprintf(out, "%" PRIi64, pUserProps[dwProp].Int64Arr[dwArrayItem]);
-                    break;
-                case EvtVarTypeUInt64:
-                    fprintf(out, "%" PRIu64, pUserProps[dwProp].UInt64Arr[dwArrayItem]);
-                    break;
-                case EvtVarTypeSingle:
-                    fprintf(out, "%f", pUserProps[dwProp].SingleArr[dwArrayItem]);
-                    break;
-                case EvtVarTypeDouble:
-                    fprintf(out, "%lf", pUserProps[dwProp].DoubleArr[dwArrayItem]);
-                    break;
-                case EvtVarTypeBoolean:
-                    fprintf(out, (pUserProps[dwProp].BooleanArr[dwArrayItem] ? "true" : "false"));
-                    break;
-                case EvtVarTypeGuid:
-                    fprintf(out, "{%08lX-%04hX-%04hX-%02hhX%02hhX-%02hhX%02hhX%02hhX%02hhX%02hhX%02hhX}",
-                        pUserProps[dwProp].GuidArr[dwArrayItem].Data1, pUserProps[dwProp].GuidArr[dwArrayItem].Data2,
-                        pUserProps[dwProp].GuidArr[dwArrayItem].Data3, pUserProps[dwProp].GuidArr[dwArrayItem].Data4[0],
-                        pUserProps[dwProp].GuidArr[dwArrayItem].Data4[1], pUserProps[dwProp].GuidArr[dwArrayItem].Data4[2],
-                        pUserProps[dwProp].GuidArr[dwArrayItem].Data4[3], pUserProps[dwProp].GuidArr[dwArrayItem].Data4[4],
-                        pUserProps[dwProp].GuidArr[dwArrayItem].Data4[5], pUserProps[dwProp].GuidArr[dwArrayItem].Data4[6],
-                        pUserProps[dwProp].GuidArr[dwArrayItem].Data4[7]);
-                    break;
-                case EvtVarTypeSizeT:
-                    fprintf(out, "%zu", pUserProps[dwProp].SizeTArr[dwArrayItem]);
-                    break;
-                case EvtVarTypeFileTime:
-                    if (!FileTimeToSystemTime((FILETIME*)&(pUserProps[dwProp].FileTimeArr[dwArrayItem]), &sysTime))
-                    {
-                        _ftprintf(stderr, TEXT("Error: failed to convert FileTime to SystemTime\n"));
-                        fprintf(out, "<unknown date?>");
-                    }
-                    fprintf(out, "%04d-%02d-%02d %02d:%02d:%02d.%03d",
-                        sysTime.wYear, sysTime.wMonth, sysTime.wDay, sysTime.wHour,
-                        sysTime.wMinute, sysTime.wSecond, sysTime.wMilliseconds);
-                    break;
-                case EvtVarTypeSysTime:
-                    fprintf(out, "%04d-%02d-%02d %02d:%02d:%02d.%03d",
-                        pUserProps[dwProp].SysTimeArr[dwArrayItem].wYear, pUserProps[dwProp].SysTimeArr[dwArrayItem].wMonth,
-                        pUserProps[dwProp].SysTimeArr[dwArrayItem].wDay, pUserProps[dwProp].SysTimeArr[dwArrayItem].wHour,
-                        pUserProps[dwProp].SysTimeArr[dwArrayItem].wMinute, pUserProps[dwProp].SysTimeArr[dwArrayItem].wSecond,
-                        pUserProps[dwProp].SysTimeArr[dwArrayItem].wMilliseconds);
-                    break;
-                case EvtVarTypeSid:
-                    if (!ConvertSidToStringSidA(pUserProps[dwProp].SidArr[dwArrayItem], &szBuffer))
-                    {
-                        _ftprintf(stderr, TEXT("Error: failed to convert SID to string\n"));
-                        fprintf(out, "<unknown SID?>");
-                    }
-                    fprintf(out, "%s", szBuffer);
-                    LocalFree(szBuffer);
-                    break;
-                case EvtVarTypeHexInt32:
-                    fprintf(out, "%04X", pUserProps[dwProp].UInt32Arr[dwArrayItem]);
-                    break;
-                case EvtVarTypeHexInt64:
-                    fprintf(out, "%08llX", pUserProps[dwProp].UInt64Arr[dwArrayItem]);
-                    break;
-                case EvtVarTypeEvtXml:
-                    fprintf(out, "%ws", pUserProps[dwProp].XmlValArr[dwArrayItem]);
-                    break;
-                default:
-                    fprintf(out, "<type=%u ?>", pUserProps[dwProp].Type);
-                }
+               if (dwArrayItem != 0)
+                  fwrite(",", 1, 1, out);
+               switch ((pUserProps[dwProp].Type) & ~EVT_VARIANT_TYPE_ARRAY)
+               {
+               case EvtVarTypeString:
+                  fprintf(out, "%ws", pUserProps[dwProp].StringArr[dwArrayItem]);
+                  break;
+               case EvtVarTypeAnsiString:
+                  fprintf(out, "%s", pUserProps[dwProp].AnsiStringArr[dwArrayItem]);
+                  break;
+               case EvtVarTypeSByte:
+                  fprintf(out, "%" PRIi8, pUserProps[dwProp].SByteArr[dwArrayItem]);
+                  break;
+               case EvtVarTypeByte:
+                  fprintf(out, "%" PRIu8, pUserProps[dwProp].ByteArr[dwArrayItem]);
+                  break;
+               case EvtVarTypeInt16:
+                  fprintf(out, "%" PRIi16, pUserProps[dwProp].Int16Arr[dwArrayItem]);
+                  break;
+               case EvtVarTypeUInt16:
+                  fprintf(out, "%" PRIu16, pUserProps[dwProp].UInt16Arr[dwArrayItem]);
+                  break;
+               case EvtVarTypeInt32:
+                  fprintf(out, "%" PRIi32, pUserProps[dwProp].Int32Arr[dwArrayItem]);
+                  break;
+               case EvtVarTypeUInt32:
+                  fprintf(out, "%" PRIu32, pUserProps[dwProp].UInt32Arr[dwArrayItem]);
+                  break;
+               case EvtVarTypeInt64:
+                  fprintf(out, "%" PRIi64, pUserProps[dwProp].Int64Arr[dwArrayItem]);
+                  break;
+               case EvtVarTypeUInt64:
+                  fprintf(out, "%" PRIu64, pUserProps[dwProp].UInt64Arr[dwArrayItem]);
+                  break;
+               case EvtVarTypeSingle:
+                  fprintf(out, "%f", pUserProps[dwProp].SingleArr[dwArrayItem]);
+                  break;
+               case EvtVarTypeDouble:
+                  fprintf(out, "%lf", pUserProps[dwProp].DoubleArr[dwArrayItem]);
+                  break;
+               case EvtVarTypeBoolean:
+                  fprintf(out, (pUserProps[dwProp].BooleanArr[dwArrayItem] ? "true" : "false"));
+                  break;
+               case EvtVarTypeGuid:
+                  fprintf(out, "{%08lX-%04hX-%04hX-%02hhX%02hhX-%02hhX%02hhX%02hhX%02hhX%02hhX%02hhX}",
+                     pUserProps[dwProp].GuidArr[dwArrayItem].Data1, pUserProps[dwProp].GuidArr[dwArrayItem].Data2,
+                     pUserProps[dwProp].GuidArr[dwArrayItem].Data3, pUserProps[dwProp].GuidArr[dwArrayItem].Data4[0],
+                     pUserProps[dwProp].GuidArr[dwArrayItem].Data4[1], pUserProps[dwProp].GuidArr[dwArrayItem].Data4[2],
+                     pUserProps[dwProp].GuidArr[dwArrayItem].Data4[3], pUserProps[dwProp].GuidArr[dwArrayItem].Data4[4],
+                     pUserProps[dwProp].GuidArr[dwArrayItem].Data4[5], pUserProps[dwProp].GuidArr[dwArrayItem].Data4[6],
+                     pUserProps[dwProp].GuidArr[dwArrayItem].Data4[7]);
+                  break;
+               case EvtVarTypeSizeT:
+                  fprintf(out, "%zu", pUserProps[dwProp].SizeTArr[dwArrayItem]);
+                  break;
+               case EvtVarTypeFileTime:
+                  if (!FileTimeToSystemTime((FILETIME*)&(pUserProps[dwProp].FileTimeArr[dwArrayItem]), &sysTime))
+                  {
+                     _ftprintf(stderr, TEXT("Error: failed to convert FileTime to SystemTime\n"));
+                     fprintf(out, "<unknown date?>");
+                  }
+                  fprintf(out, "%04d-%02d-%02d %02d:%02d:%02d.%03d",
+                     sysTime.wYear, sysTime.wMonth, sysTime.wDay, sysTime.wHour,
+                     sysTime.wMinute, sysTime.wSecond, sysTime.wMilliseconds);
+                  break;
+               case EvtVarTypeSysTime:
+                  fprintf(out, "%04d-%02d-%02d %02d:%02d:%02d.%03d",
+                     pUserProps[dwProp].SysTimeArr[dwArrayItem].wYear, pUserProps[dwProp].SysTimeArr[dwArrayItem].wMonth,
+                     pUserProps[dwProp].SysTimeArr[dwArrayItem].wDay, pUserProps[dwProp].SysTimeArr[dwArrayItem].wHour,
+                     pUserProps[dwProp].SysTimeArr[dwArrayItem].wMinute, pUserProps[dwProp].SysTimeArr[dwArrayItem].wSecond,
+                     pUserProps[dwProp].SysTimeArr[dwArrayItem].wMilliseconds);
+                  break;
+               case EvtVarTypeSid:
+                  if (!ConvertSidToStringSidA(pUserProps[dwProp].SidArr[dwArrayItem], &szBuffer))
+                  {
+                     _ftprintf(stderr, TEXT("Error: failed to convert SID to string\n"));
+                     fprintf(out, "<unknown SID?>");
+                  }
+                  fprintf(out, "%s", szBuffer);
+                  LocalFree(szBuffer);
+                  break;
+               case EvtVarTypeHexInt32:
+                  fprintf(out, "%04X", pUserProps[dwProp].UInt32Arr[dwArrayItem]);
+                  break;
+               case EvtVarTypeHexInt64:
+                  fprintf(out, "%08llX", pUserProps[dwProp].UInt64Arr[dwArrayItem]);
+                  break;
+               case EvtVarTypeEvtXml:
+                  fprintf(out, "%ws", pUserProps[dwProp].XmlValArr[dwArrayItem]);
+                  break;
+               default:
+                  fprintf(out, "<type=%u ?>", pUserProps[dwProp].Type);
+               }
                if (szField != NULL)
                {
                   strip_non_printable_chars(szField);
                   fwrite(szField, strlen(szField), 1, out);
                }
             }
-            fwrite("]", 1, 1, out);
+         fwrite("]", 1, 1, out);
          }
          else
          {
@@ -193,7 +193,6 @@ int render_event_tsv(FILE *out, EVT_HANDLE hEvent, PEVT_VARIANT pSysProps)
       fprintf(out, "\t");
    }
    fprintf(out, "\n");
-
    res = end_render_output();
 
 cleanup:

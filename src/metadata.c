@@ -18,101 +18,101 @@ static int init_fieldnames_from_system_event(PCWSTR swzPublisherName, EVT_HANDLE
 
 int export_fieldnames_to_file(PCTSTR swzFilePath)
 {
-    int res = 0;
-    std::unordered_map<std::string, std::vector<std::string>>::iterator it;
-    json_t *jMap = json_object();
-    FILE *fExport = NULL;
+   int res = 0;
+   std::unordered_map<std::string, std::vector<std::string>>::iterator it;
+   json_t *jMap = json_object();
+   FILE *fExport = NULL;
 
-    res = _tfopen_s(&fExport, swzFilePath, TEXT("w"));
-    if (res != 0)
-    {
-        _ftprintf(stderr, TEXT("Error: unable to open event field name backup file '%s', code %u\n"), swzFilePath, res);
-        goto cleanup;
-    }
+   res = _tfopen_s(&fExport, swzFilePath, TEXT("w"));
+   if (res != 0)
+   {
+      _ftprintf(stderr, TEXT("Error: unable to open event field name backup file '%s', code %u\n"), swzFilePath, res);
+      goto cleanup;
+   }
 
-    _tprintf(TEXT(" [.] Exporting publishers and field names to '%s' ...\n"), swzFilePath);
+   _tprintf(TEXT(" [.] Exporting publishers and field names to '%s' ...\n"), swzFilePath);
 
-    for (it = knownFieldNames.begin(); it != knownFieldNames.end(); it++)
-    {
-        std::vector<std::string>::iterator it2;
-        json_t *jFieldNames = json_array();
+   for (it = knownFieldNames.begin(); it != knownFieldNames.end(); it++)
+   {
+      std::vector<std::string>::iterator it2;
+      json_t *jFieldNames = json_array();
 
-        for (it2 = it->second.begin(); it2 != it->second.end(); it2++)
-        {
-            json_array_append_new(jFieldNames, json_string((*it2).c_str()));
-        }
-        json_object_set_new(jMap, it->first.c_str(), jFieldNames);
-    }
+      for (it2 = it->second.begin(); it2 != it->second.end(); it2++)
+      {
+         json_array_append_new(jFieldNames, json_string((*it2).c_str()));
+      }
+      json_object_set_new(jMap, it->first.c_str(), jFieldNames);
+   }
 
-    _tprintf(TEXT(" [.] Writing to file...\n"));
-    res = json_dumpf(jMap, fExport, JSON_INDENT(2) | JSON_COMPACT);
-    if (res != 0)
-    {
-        _ftprintf(stderr, TEXT("Error: unable to serialize event field names into backup file '%s', code %u\n"), swzFilePath, res);
-        goto cleanup;
-    }
+   _tprintf(TEXT(" [.] Writing to file...\n"));
+   res = json_dumpf(jMap, fExport, JSON_INDENT(2) | JSON_COMPACT);
+   if (res != 0)
+   {
+      _ftprintf(stderr, TEXT("Error: unable to serialize event field names into backup file '%s', code %u\n"), swzFilePath, res);
+      goto cleanup;
+   }
 
-    _tprintf(TEXT(" [.] Done exporting.\n"));
+   _tprintf(TEXT(" [.] Done exporting.\n"));
 
 cleanup:
-    if (jMap != NULL)
-        json_decref(jMap);
-    if (fExport != NULL)
-        fclose(fExport);
-    return res;
+   if (jMap != NULL)
+      json_decref(jMap);
+   if (fExport != NULL)
+      fclose(fExport);
+   return res;
 }
 
 int init_fieldnames_from_export(PCTSTR swzFilePath)
 {
-    int res = 0;
-    FILE *fBackup = NULL;
-    json_t *jMap = NULL;
-    json_error_t jError;
-    PCSTR szHashKey = NULL;
-    json_t *jFieldNames = NULL;
+   int res = 0;
+   FILE *fBackup = NULL;
+   json_t *jMap = NULL;
+   json_error_t jError;
+   PCSTR szHashKey = NULL;
+   json_t *jFieldNames = NULL;
 
-    res = _tfopen_s(&fBackup, swzFilePath, TEXT("r"));
-    if (res != 0)
-    {
-        _ftprintf(stderr, TEXT("Error: unable to open event field name list '%s', code %u\n"), swzFilePath, res);
-        goto cleanup;
-    }
+   res = _tfopen_s(&fBackup, swzFilePath, TEXT("r"));
+   if (res != 0)
+   {
+      _ftprintf(stderr, TEXT("Error: unable to open event field name list '%s', code %u\n"), swzFilePath, res);
+      goto cleanup;
+   }
 
-    jMap = json_loadf(fBackup, 0, &jError);
-    if (!jMap)
-    {
-        _ftprintf(stderr, TEXT("Error: unable to parse event field name list '%s' as JSON (%hs at line %d)\n"),
-            swzFilePath, jError.text, jError.line);
-        goto cleanup;
-    }
+   jMap = json_loadf(fBackup, 0, &jError);
+   if (!jMap)
+   {
+      _ftprintf(stderr, TEXT("Error: unable to parse event field name list '%s' as JSON (%hs at line %d)\n"),
+      swzFilePath, jError.text, jError.line);
+      goto cleanup;
+   }
 
-    _tprintf(TEXT(" [.] Importing publishers and field names from '%s' ...\n"), swzFilePath);
-    json_object_foreach(jMap, szHashKey, jFieldNames)
-    {
-        SIZE_T dwIndex = 0;
-        json_t *jFieldName = NULL;
-        if (knownFieldNames.count(szHashKey) == 0)
-        {
-            std::vector<std::string> fieldNames;
-            knownFieldNames[szHashKey] = fieldNames;
-        }
-        if (knownFieldNames[szHashKey].size() < json_array_size(jFieldNames))
-        {
-            knownFieldNames[szHashKey].resize(json_array_size(jFieldNames), "");
-        }
-        json_array_foreach(jFieldNames, dwIndex, jFieldName)
-        {
-            knownFieldNames[szHashKey][dwIndex] = json_string_value(jFieldName);
-        }
-    }
-    _tprintf(TEXT(" [.] Done importing.\n"));
+   _tprintf(TEXT(" [.] Importing publishers and field names from '%s' ...\n"), swzFilePath);
+   json_object_foreach(jMap, szHashKey, jFieldNames)
+   {
+      SIZE_T dwIndex = 0;
+      json_t *jFieldName = NULL;
+      if (knownFieldNames.count(szHashKey) == 0)
+      {
+         std::vector<std::string> fieldNames;
+         knownFieldNames[szHashKey] = fieldNames;
+      }
+      if (knownFieldNames[szHashKey].size() < json_array_size(jFieldNames))
+      {
+         knownFieldNames[szHashKey].resize(json_array_size(jFieldNames), "");
+      }
+      json_array_foreach(jFieldNames, dwIndex, jFieldName)
+      {
+         knownFieldNames[szHashKey][dwIndex] = json_string_value(jFieldName);
+      }
+   }
+   _tprintf(TEXT(" [.] Done importing.\n"));
 
 cleanup:
-    if (jMap != NULL)
-        json_decref(jMap);
-    if (fBackup != NULL)
-        fclose(fBackup);
-    return res;
+   if (jMap != NULL)
+      json_decref(jMap);
+   if (fBackup != NULL)
+      fclose(fBackup);
+   return res;
 }
 
 int init_fieldnames_from_system()
@@ -126,7 +126,7 @@ int init_fieldnames_from_system()
    EVT_HANDLE hPublisher = NULL;
 
    if (bInitFromSystemDone)
-       goto cleanup;
+      goto cleanup;
    bInitFromSystemDone = TRUE;
 
    hPublishers = EvtOpenPublisherEnum(NULL, 0);
@@ -244,7 +244,7 @@ static int init_fieldnames_from_system_event(PCWSTR swzPublisherName, EVT_HANDLE
          if (swzFieldNameEnd == NULL)
          {
             _ftprintf(stderr, TEXT(" [!] Warning: unable to parse template from publisher '%s' event %u version %u\n"),
-               swzPublisherName, ((PEVT_VARIANT)&bufEventID)->UInt32Val, ((PEVT_VARIANT)&bufEventVersion)->UInt32Val);
+            swzPublisherName, ((PEVT_VARIANT)&bufEventID)->UInt32Val, ((PEVT_VARIANT)&bufEventVersion)->UInt32Val);
             goto cleanup;
          }
          dwFieldNameLen = swzFieldNameEnd - swzFieldNameStart;
