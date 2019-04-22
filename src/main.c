@@ -27,6 +27,11 @@ input_t input = INPUT_DEFAULT;
 output_t output = OUTPUT_DEFAULT;
 FILE *fOutput = NULL;
 
+static void print_version()
+{
+   _ftprintf(stderr, TEXT("evtq v1.0 - https://github.com/mtth-bfft/evtq \n"));
+}
+
 static void print_usage()
 {
     _ftprintf(stderr, TEXT("evtq [input] [output] [options]\n"));
@@ -45,6 +50,7 @@ static void print_usage()
     _ftprintf(stderr, TEXT("Options:\n"));
     _ftprintf(stderr, TEXT("  -h --help                       display this help text\n"));
     _ftprintf(stderr, TEXT("  -v --verbose                    increase verbosity(can be repeated)\n"));
+    _ftprintf(stderr, TEXT("  -V --version                    display the current version and exit\n"));
     _ftprintf(stderr, TEXT("  -a --append                     append to output files, don't truncate\n"));
     _ftprintf(stderr, TEXT("  -e --ever                       for live inputs, dump existing events instead of new ones\n"));
     _ftprintf(stderr, TEXT("  -i --import-providers <x.json>  JSON file with known events and field names\n"));
@@ -156,6 +162,11 @@ int _tmain(int argc, TCHAR* argv[])
       if (_tcsicmp(arg, TEXT("-h")) == 0 || _tcsicmp(arg, TEXT("--help")) == 0)
       {
          print_usage();
+         return 1;
+      }
+      else if (_tcsicmp(arg, TEXT("-V")) == 0 || _tcsicmp(arg, TEXT("--version")) == 0)
+      {
+         print_version();
          return 1;
       }
       else if (_tcsicmp(arg, TEXT("-f")) == 0 || _tcsnicmp(arg, TEXT("--filter"), 8) == 0)

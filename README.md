@@ -15,7 +15,8 @@
       --to-json [filename]
     Options:
       -h --help                       display this help text
-      -v --verbose                    increase verbosity(can be repeated)
+      -V --version                    display the current version and exit
+      -v --verbose                    increase verbosity (can be repeated)
       -a --append                     append to output files, don't truncate
       -e --ever                       for live inputs, dump existing events instead of new ones
       -i --import-providers <x.json>  JSON file with known events and field names
