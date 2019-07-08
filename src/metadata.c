@@ -244,7 +244,7 @@ static int init_fieldnames_from_system_event(PCWSTR swzPublisherName, EVT_HANDLE
          if (swzFieldNameEnd == NULL)
          {
             _ftprintf(stderr, TEXT(" [!] Warning: unable to parse template from publisher '%s' event %u version %u\n"),
-            swzPublisherName, ((PEVT_VARIANT)&bufEventID)->UInt32Val, ((PEVT_VARIANT)&bufEventVersion)->UInt32Val);
+            swzPublisherName, ((PEVT_VARIANT)&bufEventID)->UInt16Val, ((PEVT_VARIANT)&bufEventVersion)->UInt32Val);
             goto cleanup;
          }
          dwFieldNameLen = swzFieldNameEnd - swzFieldNameStart;
@@ -259,7 +259,7 @@ static int init_fieldnames_from_system_event(PCWSTR swzPublisherName, EVT_HANDLE
    if (fieldNames.size() > 0)
    {
       CHAR szHashKey[255] = { 0 };
-      sprintf_s(szHashKey, 255, "%ws-%u-%u", swzPublisherName, ((PEVT_VARIANT)&bufEventID)->UInt32Val, ((PEVT_VARIANT)&bufEventVersion)->UInt32Val);
+      sprintf_s(szHashKey, 255, "%ws-%u-%u", swzPublisherName, ((PEVT_VARIANT)&bufEventID)->UInt16Val, ((PEVT_VARIANT)&bufEventVersion)->UInt32Val);
       knownFieldNames[szHashKey] = fieldNames;
    }
 
