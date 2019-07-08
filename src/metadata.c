@@ -250,7 +250,7 @@ static int init_fieldnames_from_system_event(PCWSTR swzPublisherName, EVT_HANDLE
          dwFieldNameLen = swzFieldNameEnd - swzFieldNameStart;
          if (dwFieldNameLen > 0)
          {
-            std::string fieldName(safe_strconv(swzFieldNameStart, dwFieldNameLen));
+            std::string fieldName(safe_strconv(swzFieldNameStart, (int) dwFieldNameLen));
             fieldNames.push_back(fieldName);
          }
       }
