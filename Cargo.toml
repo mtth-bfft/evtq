@@ -1,0 +1,12 @@
+[package]
+name = "evtq"
+version = "1.2.0"
+authors = ["Matthieu Buffet <mtth.bfft@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+clap = "2.33.0"
+winapi = { version = "0.3.8", features = ["winevt", "winerror", "timezoneapi", "sddl", "synchapi", "handleapi"] }
+serde = { version = "1.0.102", features = ["derive"] }
+serde_json = { version = "1.0.41", features = ["preserve_order"] }
+roxmltree = "0.7.3"
