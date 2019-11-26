@@ -1,6 +1,6 @@
 use std::ptr::{null_mut, NonNull};
 use std::convert::TryFrom;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::time::Instant;
 use std::ops::Deref;
 use roxmltree;
@@ -179,8 +179,8 @@ fn get_evt_metadata(h_evt: &EvtHandle, prop: EVT_EVENT_METADATA_PROPERTY_ID) -> 
     unwrap_variant_contents(&evt_variant, None)
 }
 
-pub fn get_evt_provider_event_fields(provider_name: &str) -> Result<HashMap<u64, HashMap<u64, HashMap<u64, EventFieldDefinition>>>, String> {
-    let mut result = HashMap::new();
+pub fn get_evt_provider_event_fields(provider_name: &str) -> Result<BTreeMap<u64, BTreeMap<u64, BTreeMap<u64, EventFieldDefinition>>>, String> {
+    let mut result = BTreeMap::new();
     let (_h_metadata, h_evtenum) = match get_evt_provider_handle(provider_name)? {
         Some(handles) => handles,
         None => return Ok(result),
@@ -222,8 +222,8 @@ pub fn get_evt_provider_event_fields(provider_name: &str) -> Result<HashMap<u64,
             continue;
         }
 
-        let versions = result.entry(event_id).or_insert(HashMap::new());
-        let fields = versions.entry(version).or_insert(HashMap::new());
+        let versions = result.entry(event_id).or_insert(BTreeMap::new());
+        let fields = versions.entry(version).or_insert(BTreeMap::new());
 
         if fields.len() > 0 {
             warn!("Event {} #{} version {} has more than one list of field definitions",
@@ -522,7 +522,7 @@ fn debug_event(h_event: &EvtHandle, error: String) {
             render_callback: crate::xml::render_event_xml,
             output_file: Box::from(std::sync::Mutex::new(std::io::stderr())),
             datefmt: "".to_string(),
-            field_defs: std::collections::HashMap::new(),
+            field_defs: BTreeMap::new(),
             field_separator: '\0',
             json_pretty: false,
             columns: vec![],

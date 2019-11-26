@@ -46,13 +46,13 @@ FILTERING:
 
 ## Examples
 
-- Just dump eventlogs as they arrive on localhost, in JSON
+- Just dump eventlogs as they arrive on localhost, in JSON (the default output format, which enriches event fields with their name and correct type)
 
 ```
     .\evtq.exe
 ```
 
-- List all sessions ever opened in a backed-up Security eventlog, in JSON
+- List all sessions ever opened in a backed-up Security eventlog
 
 ```
     .\evtq.exe --from-backup .\security.evtx -i Security/Microsoft-Windows-Security-Auditing/4624
@@ -76,11 +76,24 @@ FILTERING:
     .\evtq.exe --to-csv .\all.csv -O timestamp,provider,eventid,version,variant1,...,variant15
 ```
 
+- Show events as they arrive on a remote host, using the published listing of event definitions instead of the system's one:
+
+```
+    .\evtq.exe --from-host server1.lab.local --no-system-fields --import-event-fields .\event_definitions.json
+```
+
 To allow remote hosts to use the EventLogs RPC endpoint, your host must be running Windows Vista or later, and you must enable the "Remote Event Log Management" exception in Windows Firewall.
+
+## Contributing
+
+If you encounter any issue using this tool, or would like to see new features implemented, open an issue.
+
+Also, the `event_definitions.json` listing is a constant work in progress which needs to be updated and extended with new event definitions you find that might be of interest to the community.
+To generate a similar JSON export, on the host with event definitions, run: `evtq.exe --export-event-fields .\event_definitions.json --json-pretty`
 
 ## TODO
 
 - See OpenBackupEventLog()
 - Implement formatting for arrays
+- Add support for raw XML XPath queries
 - GZIP compression
-

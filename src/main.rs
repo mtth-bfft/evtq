@@ -9,7 +9,7 @@ use clap::{Arg, App, ArgGroup};
 use std::result::Result;
 use std::io;
 use std::time::Instant;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::vec::Vec;
 use std::fs::OpenOptions;
 use std::sync::Mutex;
@@ -40,7 +40,7 @@ pub struct RenderingConfig {
     render_callback: fn(&EvtHandle, &CommonEventProperties, &RenderingConfig) -> Result<(), String>,
     output_file: Box<Mutex<dyn std::io::Write>>,
     datefmt: String,
-    field_defs: HashMap<String, HashMap<u64, HashMap<u64, HashMap<u64, event_defs::EventFieldDefinition>>>>,
+    field_defs: BTreeMap<String, BTreeMap<u64, BTreeMap<u64, BTreeMap<u64, event_defs::EventFieldDefinition>>>>,
     field_separator: char,
     json_pretty: bool,
     columns: Vec<OutputColumn>,
@@ -203,7 +203,7 @@ EXAMPLES:
         render_callback: render_event_json,
         output_file: Box::new(Mutex::new(std::io::stdout())),
         datefmt: "".to_string(),
-        field_defs: HashMap::new(),
+        field_defs: BTreeMap::new(),
         field_separator: '\0',
         json_pretty: false,
         columns: vec![],

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use crate::RenderingConfig;
 
@@ -9,10 +9,10 @@ pub struct EventFieldDefinition {
 }
 
 // Aliased type for ProviderName -> EventID -> Version -> FieldNumber -> EventFieldDefinition map
-pub type EventFieldMapping = HashMap<String, HashMap<u64, HashMap<u64, HashMap<u64, EventFieldDefinition>>>>;
+pub type EventFieldMapping = BTreeMap<String, BTreeMap<u64, BTreeMap<u64, BTreeMap<u64, EventFieldDefinition>>>>;
 
 pub fn read_field_defs_from_system() -> Result<EventFieldMapping, String> {
-    let mut field_defs = HashMap::new();
+    let mut field_defs = BTreeMap::new();
 
     info!("Importing event definitions from live system");
 
@@ -31,11 +31,11 @@ pub fn read_field_defs_from_system() -> Result<EventFieldMapping, String> {
 
 pub fn update_field_defs_with(known_defs: &mut EventFieldMapping, new_defs: &EventFieldMapping) {
     for (provider_name, new_events) in new_defs {
-        let known_events = known_defs.entry(provider_name.to_owned()).or_insert(HashMap::new());
+        let known_events = known_defs.entry(provider_name.to_owned()).or_insert(BTreeMap::new());
         for (eventid, new_versions) in new_events {
-            let known_versions = known_events.entry(eventid.to_owned()).or_insert(HashMap::new());
+            let known_versions = known_events.entry(eventid.to_owned()).or_insert(BTreeMap::new());
             for (version, new_fields) in new_versions {
-                let known_fields = known_versions.entry(version.to_owned()).or_insert(HashMap::new());
+                let known_fields = known_versions.entry(version.to_owned()).or_insert(BTreeMap::new());
                 for (field_num, field_def) in new_fields {
                     known_fields.insert(field_num.to_owned(), field_def.to_owned());
                 }
