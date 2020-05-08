@@ -279,14 +279,18 @@ pub fn get_evt_provider_event_fields(provider_name: &str) -> Result<BTreeMap<u64
 
 pub fn open_evt_session(hostname: &str, credentials: Option<&RpcCredentials>) -> Result<EvtHandle, String> {
     let mut hostname_u16 : Vec<u16> = hostname.encode_utf16().collect();
+    hostname_u16.resize(hostname_u16.len() + 1, 0); // NULL-terminate
     let mut domain_u16 : Vec<u16>;
     let mut username_u16 : Vec<u16>;
     let mut password_u16 : Vec<u16>;
     let mut rpc_creds = match credentials {
         Some(c) => {
             domain_u16 = c.domain.encode_utf16().collect();
+            domain_u16.resize(domain_u16.len() + 1, 0); // NULL-terminate
             username_u16 = c.username.encode_utf16().collect();
+            username_u16.resize(username_u16.len() + 1, 0); // NULL-terminate
             password_u16 = c.password.encode_utf16().collect();
+            password_u16.resize(password_u16.len() + 1, 0); // NULL-terminate
             EVT_RPC_LOGIN {
                 Server: hostname_u16.as_mut_ptr(),
                 Domain: domain_u16.as_mut_ptr(),
