@@ -14,7 +14,9 @@ pub type EventFieldMapping = BTreeMap<String, BTreeMap<u64, BTreeMap<u64, BTreeM
 pub fn read_field_defs_from_system() -> Result<EventFieldMapping, String> {
     let mut field_defs = BTreeMap::new();
 
-    info!("Importing event definitions from live system");
+    info!("Importing event definitions from live system, this may take a while...
+       (use --no-system-fields if you don't care about field names and types,
+        or --export-event-fields then --import-event-fields to only do it once)");
 
     for provider_name in crate::windows::get_evt_provider_names()? {
         match crate::windows::get_evt_provider_event_fields(&provider_name) {

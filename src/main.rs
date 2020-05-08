@@ -194,7 +194,7 @@ EXAMPLES:
             .takes_value(true)
             .default_value("hostname,recordid,timestamp,provider,eventid,version,variant1,...,variant15"))
         //.group(ArgGroup::with_name("source").args(&["from-host", "from-backup"]))
-        //TODO: ArgGroups with mutual exclusion, examples in help messages
+        //TODO: ArgGroups with mutual exclusion
         .get_matches();
 
     set_log_level(args.occurrences_of("verbosity") as u8);
@@ -365,7 +365,7 @@ EXAMPLES:
         };
 
         let session = windows::open_evt_session(hostname, rpc_creds)?;
-        verbose!("Authenticated to host");
+        info!("Authenticated to host");
 
         let mut channels = Vec::new();
         for channel_name in windows::evt_list_channels(&session)? {
@@ -380,7 +380,7 @@ EXAMPLES:
             }
             return Ok(());
         }
-        verbose!("Found {} channels that can be subscribed to", channels.len());
+        info!("Found {} channels which can be subscribed to. Subscribing...", channels.len());
 
         let xml_filters = xml_query_from_filters(&include, &exclude, Some(&channels))?;
         // Ensure the RenderingConfig is never freed. This is the price to pay to use the
@@ -397,6 +397,7 @@ EXAMPLES:
             let h_subscription = windows::subscribe_channel(&session, &channel_name, &render_cfg, &xml_filter, dump_existing)?;
             subscriptions.push(h_subscription);
         }
+        info!("Starting event rendering loop");
         let mut last_event_count = 0;
         while subscriptions.len() > 0 {
             std::thread::sleep(std::time::Duration::from_secs(1));
@@ -413,7 +414,7 @@ EXAMPLES:
             last_event_count = current_event_count;
         }
         // Close all handles when all events have been received, not before
-        verbose!("Cleaning up all channel subscriptions");
+        info!("Done. Cleaning up all channel subscriptions...");
         std::mem::drop(subscriptions);
     }
 
