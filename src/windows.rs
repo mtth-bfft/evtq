@@ -8,21 +8,13 @@ use winapi::ctypes::c_void;
 use winapi::um::errhandlingapi::GetLastError;
 use winapi::um::minwinbase::SYSTEMTIME;
 use std::sync::atomic::Ordering::Relaxed;
-use winapi::shared::winerror::{
-    ERROR_NO_MORE_ITEMS,
-    ERROR_INVALID_OPERATION,
-    ERROR_INSUFFICIENT_BUFFER,
-    ERROR_ACCESS_DENIED,
-    ERROR_FILE_NOT_FOUND,
-    ERROR_RESOURCE_TYPE_NOT_FOUND,
-    ERROR_INVALID_DATA,
-    RPC_S_SERVER_UNAVAILABLE,
-};
+use winapi::shared::winerror::{ERROR_NO_MORE_ITEMS, ERROR_INVALID_OPERATION, ERROR_INSUFFICIENT_BUFFER, ERROR_ACCESS_DENIED, ERROR_FILE_NOT_FOUND, ERROR_RESOURCE_TYPE_NOT_FOUND, ERROR_INVALID_DATA, RPC_S_SERVER_UNAVAILABLE, ERROR_EVT_UNRESOLVED_VALUE_INSERT};
 use winapi::um::winevt::*;
 use crate::log::*;
 use crate::RenderingConfig;
-use crate::event_defs::EventFieldDefinition;
+use crate::event_defs::{EventFieldDefinition, EventDefinition};
 use crate::formatting::{EvtVariant, CommonEventProperties, get_event_common_properties, unwrap_variant_contents};
+use winapi::shared::minwindef::DWORD;
 
 const INFINITE : u32 = 0xFFFFFFFF;
 
@@ -158,7 +150,6 @@ pub fn get_evt_provider_names() -> Result<Vec<String>, String> {
     Ok(result)
 }
 
-
 fn get_evt_metadata(h_evt: &EvtHandle, prop: EVT_EVENT_METADATA_PROPERTY_ID) -> Result<EvtVariant, String> {
     let mut buffer: Vec<u8> = Vec::new();
     let mut buffer_len_req: u32 = 0;
@@ -179,7 +170,8 @@ fn get_evt_metadata(h_evt: &EvtHandle, prop: EVT_EVENT_METADATA_PROPERTY_ID) -> 
     unwrap_variant_contents(&evt_variant, None)
 }
 
-pub fn get_evt_provider_event_fields(provider_name: &str) -> Result<BTreeMap<u64, BTreeMap<u64, BTreeMap<u64, EventFieldDefinition>>>, String> {
+// Returns a map from Event ID -> Version -> EventDefinition
+pub fn get_evt_provider_event_fields(provider_name: &str) -> Result<BTreeMap<u64, BTreeMap<u64, EventDefinition>>, String> {
     let mut result = BTreeMap::new();
     let (_h_metadata, h_evtenum) = match get_evt_provider_handle(provider_name)? {
         Some(handles) => handles,
@@ -222,14 +214,44 @@ pub fn get_evt_provider_event_fields(provider_name: &str) -> Result<BTreeMap<u64
             continue;
         }
 
-        let versions = result.entry(event_id).or_insert(BTreeMap::new());
-        let fields = versions.entry(version).or_insert(BTreeMap::new());
+        let message_id = match get_evt_metadata(&h_evt, EventMetadataEventMessageID) {
+            Ok(EvtVariant::UInt(id)) if id <= (std::u32::MAX as u64) => id,
+            Ok(_) => return Err(format!("Unexpected value type returned for EventMessageID")),
+            Err(e) => return Err(e),
+        };
 
-        if fields.len() > 0 {
-            warn!("Event {} #{} version {} has more than one list of field definitions",
-                provider_name, event_id, version);
+        // message_id == (DWORD)(-1) means the provider doesn't have a message string for that event
+        let mut message: Option<String> = None;
+        if message_id < 4294967295 {
+            let mut buffer_req: DWORD = 0;
+            let res = unsafe {
+                EvtFormatMessage(_h_metadata.as_ptr(), null_mut(), message_id as u32, 0, null_mut() as *mut _, EvtFormatMessageId, 0, null_mut(), &mut buffer_req as *mut _)
+            };
+            if res != 0 || get_win32_errcode() != ERROR_INSUFFICIENT_BUFFER {
+                warn!("EvtFormatMessage({}/{}/{}, {}, EvtFormatMessageId) returned {} and error code {}",
+                          provider_name, event_id, version, message_id, res, get_win32_errcode());
+            }
+            else {
+                let mut buf : Vec<u16> = Vec::new();
+                buf.resize(buffer_req as usize, 0);
+                let res = unsafe {
+                    EvtFormatMessage(_h_metadata.as_ptr(), null_mut(), message_id as u32, 0, null_mut() as *mut _, EvtFormatMessageId, buffer_req, buf.as_mut_ptr(), &mut buffer_req as *mut _)
+                };
+                // It's an error for EvtFormatMessage() to return a string with "%1" placeholders.
+                // We don't care, that's exactly what we want.
+                if res == 0 && get_win32_errcode() != ERROR_EVT_UNRESOLVED_VALUE_INSERT {
+                    warn!("EvtFormatMessage({}/{}/{}, {}, EvtFormatMessageId) 2 returned {} and error code {}",
+                          provider_name, event_id, version, message_id, res, get_win32_errcode());
+                }
+                else {
+                    // Remove the NULL terminator and parse as UTF16
+                    buf.resize((buffer_req as usize) - 1, 0);
+                    message = Some(String::from_utf16_lossy(buf.as_slice()));
+                }
+            }
         }
 
+        // Parse field names from the template XML
         let xml = match roxmltree::Document::parse(&fields_template) {
             Ok(d) => d,
             Err(e) => {
@@ -243,9 +265,7 @@ pub fn get_evt_provider_event_fields(provider_name: &str) -> Result<BTreeMap<u64
                       provider_name, event_id, version, fields_template);
             continue;
         }
-
-        // Parse field names from the template XML
-        let mut field_num : u64 = 0;
+        let mut fields : Vec<EventFieldDefinition> = Vec::new();
         for field_node in xml.root_element().children() {
             if !field_node.is_element() {
                 continue; // skip any comment
@@ -254,7 +274,7 @@ pub fn get_evt_provider_event_fields(provider_name: &str) -> Result<BTreeMap<u64
                 if field_node.has_tag_name("struct") {
                     continue; // see issue #2
                 }
-                warn!("Event {} #{} version {} has unexpected XML data node '{}':\n{}",
+                warn!("Event {} ID={} version={} has unexpected XML data node '{}':\n{}",
                           provider_name, event_id, version, field_node.tag_name().name(), fields_template);
                 break;
             };
@@ -264,13 +284,25 @@ pub fn get_evt_provider_event_fields(provider_name: &str) -> Result<BTreeMap<u64
                     name: name.to_owned(),
                     out_type: out_type.to_owned(),
                 };
-                fields.insert(field_num as u64, field_def);
-                field_num += 1;
+                fields.push(field_def);
             } else {
                 warn!("Event {} #{} version {} has incomplete XML data node:\n{}",
                           provider_name, event_id, version, fields_template);
                 break;
             };
+        }
+
+        // Insert everything into the final hashmap
+        let versions = result.entry(event_id).or_insert(BTreeMap::new());
+        if versions.contains_key(&version) {
+            warn!("Event {} ID={} version={} enumerated more than once by EvtNextEventMetadata()",
+                provider_name, event_id, version);
+        }
+        let event_def = EventDefinition { message, fields };
+        let prev = versions.insert(version, event_def);
+        if prev.is_some() {
+            warn!("Event {} #{} version {} has more than one list of field definitions",
+                provider_name, event_id, version);
         }
     }
 

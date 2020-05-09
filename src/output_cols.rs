@@ -45,12 +45,12 @@ pub fn parse_column_names(names: &str) -> Result<Vec<OutputColumn>, String> {
                     for i in (last_prop_num+1)..prop_num {
                         columns.push(OutputColumn::EventSpecific(i));
                     }
-                    expand_next_prop_num = false;
                 }
                 OutputColumn::EventSpecific(prop_num)
             },
             other => return Err(format!("Unexpected output column name '{}'", other))
         };
+        expand_next_prop_num = false;
         last_prop_num = match col {
             OutputColumn::EventSpecific(prop_num) => Some(prop_num),
             _ => None,

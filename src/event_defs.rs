@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
-use crate::RenderingConfig;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EventFieldDefinition {
@@ -8,8 +7,14 @@ pub struct EventFieldDefinition {
     pub out_type: String,
 }
 
-// Aliased type for ProviderName -> EventID -> Version -> FieldNumber -> EventFieldDefinition map
-pub type EventFieldMapping = BTreeMap<String, BTreeMap<u64, BTreeMap<u64, BTreeMap<u64, EventFieldDefinition>>>>;
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct EventDefinition {
+    pub message: Option<String>,
+    pub fields: Vec<EventFieldDefinition>,
+}
+
+// Aliased type for ProviderName -> EventID -> Version -> EventDefinition
+pub type EventFieldMapping = BTreeMap<String, BTreeMap<u64, BTreeMap<u64, EventDefinition>>>;
 
 pub fn read_field_defs_from_system() -> Result<EventFieldMapping, String> {
     let mut field_defs = BTreeMap::new();
@@ -36,10 +41,19 @@ pub fn update_field_defs_with(known_defs: &mut EventFieldMapping, new_defs: &Eve
         let known_events = known_defs.entry(provider_name.to_owned()).or_insert(BTreeMap::new());
         for (eventid, new_versions) in new_events {
             let known_versions = known_events.entry(eventid.to_owned()).or_insert(BTreeMap::new());
-            for (version, new_fields) in new_versions {
-                let known_fields = known_versions.entry(version.to_owned()).or_insert(BTreeMap::new());
-                for (field_num, field_def) in new_fields {
-                    known_fields.insert(field_num.to_owned(), field_def.to_owned());
+            for (version, new_def) in new_versions {
+                match known_versions.get_mut(version) {
+                    // If we didn't know anything about that event, use it all, it can't be worse
+                    None => { known_versions.insert(version.to_owned(), new_def.to_owned()); },
+                    // We had an event definition, use contents to fill the blanks
+                    Some(event_def) => {
+                        if let Some(message) = &new_def.message {
+                            event_def.message = Some(message.to_owned());
+                        }
+                        for (i, def) in new_def.fields.iter().enumerate() {
+                            event_def.fields[i] = def.to_owned();
+                        }
+                    }
                 }
             }
         }
@@ -73,20 +87,4 @@ pub fn read_field_defs_from_file(in_file: &mut std::fs::File) -> Result<EventFie
         Err(e) => return Err(format!("Cannot deserialize JSON from file: {}", e.to_string())),
     };
     Ok(field_defs)
-}
-
-pub fn get_field_name(provider_name: &str, eventid: &u64, version: &u64, field_num: &u64, context: &RenderingConfig) -> EventFieldDefinition {
-    if let Some(events) = context.field_defs.get(provider_name) {
-        if let Some(versions) = events.get(eventid) {
-            if let Some(fields) = versions.get(version) {
-                if let Some(field_def) = fields.get(field_num) {
-                    return field_def.to_owned();
-                }
-            }
-        }
-    }
-    EventFieldDefinition {
-        name: format!("field{}", field_num),
-        out_type: "xs:string".to_owned(),
-    }
 }

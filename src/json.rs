@@ -6,7 +6,7 @@ use winapi::ctypes::c_void;
 use crate::windows::{EvtHandle, get_win32_errcode};
 use crate::{RenderingConfig, OutputColumn};
 use crate::formatting::{unwrap_variant_contents, bytes_as_hexstring, format_utc_systemtime, CommonEventProperties, EvtVariant};
-use crate::event_defs::get_field_name;
+use crate::event_defs::{EventFieldDefinition, EventDefinition};
 
 pub fn render_event_json(h_event: &EvtHandle, common_props: &CommonEventProperties, render_cfg: &RenderingConfig) -> Result<(), String> {
     let h_ctxuser = unsafe { EvtCreateRenderContext(0, null_mut(), EvtRenderContextUser) };
@@ -45,6 +45,18 @@ pub fn render_event_json(h_event: &EvtHandle, common_props: &CommonEventProperti
         }
     }
 
+    let mut event_def = & EventDefinition {
+        message: None,
+        fields: vec![],
+    };
+    if let Some(events) = render_cfg.field_defs.get(&common_props.provider) {
+        if let Some(versions) = events.get(&common_props.eventid) {
+            if let Some(known_event_def) = versions.get(&common_props.version) {
+                event_def = known_event_def;
+            }
+        }
+    }
+
     let mut event_json = serde_json::Map::new();
     for column in &render_cfg.columns {
         match column {
@@ -61,16 +73,21 @@ pub fn render_event_json(h_event: &EvtHandle, common_props: &CommonEventProperti
             OutputColumn::Version => event_json.insert("version".to_owned(),
                   serde_json::value::Value::from(common_props.version)),
             OutputColumn::EventSpecific(prop_num) => {
-                if prop_num >= &props_count {
-                    break; // silently truncate lines which reference non-existent fields
+                if *prop_num > props_count {
+                    // The referenced field number does not exist for this event,
+                    // there's no point in inserting an "fieldN": null or "fieldN": "" in JSON
+                    // Remember prop_num is 1-indexed
+                    break;
+                };
+                let mut field_def = & EventFieldDefinition {
+                    name: format!("field{}", prop_num),
+                    out_type: "xs:string".to_owned(),
+                };
+                if (*prop_num - 1) < event_def.fields.len() as u32 {
+                    field_def = &event_def.fields[(*prop_num - 1) as usize];
                 }
-                let buffer_offset = (*prop_num as usize) * std::mem::size_of::<EVT_VARIANT>();
-                let field_def = get_field_name(&common_props.provider,
-                    &common_props.eventid,
-                    &common_props.version,
-                    &(*prop_num as u64),
-                    render_cfg
-                );
+
+                let buffer_offset = ((*prop_num - 1) as usize) * std::mem::size_of::<EVT_VARIANT>();
                 let prop : EVT_VARIANT = unsafe {
                     std::ptr::read(buffer.as_ptr().add(buffer_offset) as *const _)
                 };
@@ -88,7 +105,7 @@ pub fn render_event_json(h_event: &EvtHandle, common_props: &CommonEventProperti
                     EvtVariant::DateTime(d) => serde_json::value::Value::from(
                         format_utc_systemtime(&d, &render_cfg.datefmt)),
                 };
-                event_json.insert(field_def.name, json_value)
+                event_json.insert(field_def.name.to_owned(), json_value)
             },
         };
     }

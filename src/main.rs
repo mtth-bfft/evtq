@@ -40,7 +40,7 @@ pub struct RenderingConfig {
     render_callback: fn(&EvtHandle, &CommonEventProperties, &RenderingConfig) -> Result<(), String>,
     output_file: Box<Mutex<dyn std::io::Write>>,
     datefmt: String,
-    field_defs: BTreeMap<String, BTreeMap<u64, BTreeMap<u64, BTreeMap<u64, event_defs::EventFieldDefinition>>>>,
+    field_defs: BTreeMap<String, BTreeMap<u64, BTreeMap<u64, EventDefinition>>>,
     field_separator: char,
     json_pretty: bool,
     columns: Vec<OutputColumn>,
@@ -327,6 +327,7 @@ EXAMPLES:
         render_cfg.render_callback = render_event_json;
         render_cfg.output_file = Box::from(Mutex::new(out_file));
     }
+    info!("Metadata from {} providers imported", render_cfg.field_defs.len());
 
     if args.occurrences_of("from-backup") == 1 {
         let path = args.value_of("from-backup").unwrap();
