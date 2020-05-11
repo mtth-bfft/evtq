@@ -59,48 +59,46 @@ pub fn run() -> Result<(), String> {
     let args = App::new("evtq")
         .version(env!("CARGO_PKG_VERSION"))
         .author(env!("CARGO_PKG_AUTHORS"))
-        .about("Windows EventLog querier, parser, and formatter")
+        .about("Windows EventLog fetcher, parser, filter and formatter")
         .help(r#"
-evtq - Windows EventLog querier, parser, and formatter
-https://github.com/mtth-bfft/evtq
+evtq.exe [input] [filtering] [output] [common]
+Windows EventLog querying/parsing/formatting - https://github.com/mtth-bfft/evtq
 
-COMMON:
- -h --help                             Display this help text
- -V --version                          Display the current version
- -v --verbose                          Increase verbosity (can be repeated for more information)
- -O --columns                          Comma-separated list of columns to include in JSON, CSV, and TSV outputs
-        (default: hostname,recordid,timestamp,provider,eventid,version,formatted_message,variant1,...,variant15)
-        (use 'unformatted_message' or remove the field altogether if you don't want to duplicate
-         information with the variant1-N fields, or if you only care about individual fields)
-    --datefmt                          Change the default format for all date-times
-        (default: %Y-%m-%dT%H:%M:%S%.3f%z)
-
-FIELD NAMING: (only used with the JSON output)
-    --no-system-fields                 Don't load event field definitions from the live OS
-    --export-event-fields <bak.json>   Export event field definitions to re-import them on another host
-    --import-event-fields <bak.json>   Import event field definitions exported from another host
-
-SOURCE:
-    --from-backup <filename.evt(x)>    Read events from a backup .evtx or .evt
-    --from-host <URI>                  Read events as they happen on a live host via RPC (default: localhost)
-        URI format: <[[domain/]username:password@]hostname>
-    --dump-existing                    Also process existing (past) events from the queried host
-    --no-wait                          Don't wait for future events to arrive from the queried host
-    --list-channels                    Don't dump events, just list available channels from the host
-
-OUTPUTS:
-    --to-xml  [output.xml]             Render events as lines of raw XML (default: stdout)
-    --to-csv  [output.csv]             Render events as lines of comma-separated columns (default: stdout)
-    --to-tsv  [output.tsv]             Render events as lines of tab-separated columns (default: stdout)
-    --to-json [output.json]            Render events to a JSON file with field names (default: stdout)
-    --json-pretty                      Add spaces and line feeds to make the JSON human-readable
- -a --append                           Don't overwrite output files if they exist
+INPUT:
+    --from-host [URI, default is localhost]  Read events as they happen on a live host via RPC
+                                             URI format: domain/username:password@hostname
+    --from-backup <filename.evt(x)> Read events from a backup .evtx or .evt
+    --dump-existing                 Also process existing (past) events from the queried host
+    --no-wait                       Don't wait for future events to arrive from the queried host
+    --list-channels                 Don't dump events, just list available channels from the host
 
 FILTERING:
- -i --include <filter>                 Only render events matching this filter (default: */*/*/*)
- -e --exclude <filter>                 Don't render events matching this filter
+ -i --include <filter>              Only render events matching this filter (default: */*/*/*)
+ -e --exclude <filter>              Don't render events matching this filter
       Filter format: ChannelName/ProviderName/EventID/Version
-      Each field can be replaced with a * as a wildcard
+      Each of the four parts can be replaced with * as a wildcard
+
+OUTPUT:
+    --to-json [output.json]         Render events to a JSON file with field names (default: stdout)
+    --to-xml  [output.xml]          Render events as lines of raw XML (default: stdout)
+    --to-csv  [output.csv]          Render events as lines of comma-separated columns (default: stdout)
+    --to-tsv  [output.tsv]          Render events as lines of tab-separated columns (default: stdout)
+    --json-pretty                   Add spaces and line feeds to JSON outputs
+ -a --append                        Don't overwrite output files if they exist
+
+COMMON:
+ -h --help                          Display this help text
+ -V --version                       Display the current version
+ -v --verbose                       Increase verbosity (can be repeated for extra information)
+ -O --columns                       Comma-separated list of columns to output in JSON, CSV, or TSV
+      (default: hostname,recordid,timestamp,provider,eventid,version,formatted_message,variant1,...,variant15)
+      (use 'unformatted_message' or remove 'formatted_message' if you don't want to duplicate
+       information with the variantN fields, or if you only care about individual fields)
+    --no-system-metadata            Don't load field names, types, and message strings from the live OS
+    --export-metadata <meta.json>   Export metadata to file
+    --import-metadata <meta.json>   Import and use metadata from file
+    --datefmt                       Change the default format for all date-times
+        (default: %Y-%m-%dT%H:%M:%S%.3f%z)
 
 EXAMPLES:
 
@@ -111,10 +109,10 @@ EXAMPLES:
     .\evtq.exe --from-backup .\security.evtx -i Security/Microsoft-Windows-Security-Auditing/4624
 
 # Dump all events that ever happened except one type, from a remote host, in CSV
-    .\evtq.exe --from-host server1.lab.local --dump-existing -e Application/*/1026 --to-csv .\a.csv
+    .\evtq.exe --from-host server1.lab --dump-existing -e Application/*/1026 --to-csv .\a.csv
 
 # List processes as they are created on a remote host using explicit credentials
-    .\evtq.exe --from-host lab1/Admin:MyPassw0rd@server1.lab.local --to-json .\procs.json -i */*/4688
+    .\evtq.exe --from-host lab1/Admin:MyPassw0rd@server1.lab --to-json .\procs.json -i */*/4688
 
 # Dump events as they happen on localhost, in CSV format, removing columns you don't use
     .\evtq.exe --to-csv .\all.csv -O timestamp,provider,eventid,version,variant1,...,variant15
@@ -126,14 +124,14 @@ EXAMPLES:
         .arg(Arg::with_name("version")
             .short("V")
             .long("version"))
-        .arg(Arg::with_name("export-event-fields")
-            .long("export-event-fields")
-            .value_name("fields.json")
+        .arg(Arg::with_name("export-metadata")
+            .long("export-metadata")
+            .value_name("meta.json")
             .default_value("stdout")
             .help(""))
-        .arg(Arg::with_name("import-event-fields")
-            .long("import-event-fields")
-            .value_name("fields.json"))
+        .arg(Arg::with_name("import-metadata")
+            .long("import-metadata")
+            .value_name("meta.json"))
         .arg(Arg::with_name("from-host")
             .long("from-host")
             .default_value("localhost"))
@@ -164,8 +162,8 @@ EXAMPLES:
             .default_value("%Y-%m-%dT%H:%M:%S%.3f%z"))
         .arg(Arg::with_name("json-pretty")
             .long("json-pretty"))
-        .arg(Arg::with_name("no-system-fields")
-            .long("no-system-fields"))
+        .arg(Arg::with_name("no-system-metadata")
+            .long("no-system-metadata"))
         .arg(Arg::with_name("list-channels")
             .long("list-channels"))
         .arg(Arg::with_name("include")
@@ -214,7 +212,7 @@ EXAMPLES:
     };
 
     let list_channels = args.occurrences_of("list-channels") != 0;
-    let do_import_system_fields = args.occurrences_of("no-system-fields") == 0 && !list_channels;
+    let do_import_system_fields = args.occurrences_of("no-system-metadata") == 0 && !list_channels;
     render_cfg.datefmt = args.value_of("datefmt").unwrap().to_owned();
     render_cfg.columns = parse_column_names(args.value_of("columns").unwrap())?;
     render_cfg.json_pretty = args.occurrences_of("json-pretty") > 0;
@@ -230,26 +228,26 @@ EXAMPLES:
         vec![]
     };
 
-    if args.occurrences_of("import-event-fields") == 1 {
-        let in_path = args.value_of("import-event-fields").unwrap();
+    if args.occurrences_of("import-metadata") == 1 {
+        let in_path = args.value_of("import-metadata").unwrap();
         let mut in_file = match OpenOptions::new().read(true).open(in_path) {
             Err(e) => return Err(format !("Could not open file {} : {}", in_path, e)),
             Ok(f) => f,
         };
 
         if do_import_system_fields && !system_field_defs_read {
-            match read_field_defs_from_system() {
-                Ok(system_field_defs) => update_field_defs_with(&mut render_cfg.field_defs, &system_field_defs),
-                Err(e) => warn!("Could not import system field definitions: only using the given export ({})", e),
+            match import_metadata_from_system() {
+                Ok(system_field_defs) => update_metadata_with(&mut render_cfg.field_defs, &system_field_defs),
+                Err(e) => warn!("Could not import system metadata: only using the given export ({})", e),
             }
             system_field_defs_read = true;
         }
-        let imported_field_defs = read_field_defs_from_file(&mut in_file)?;
-        update_field_defs_with(&mut render_cfg.field_defs, &imported_field_defs);
+        let imported_field_defs = import_metadata_from_file(&mut in_file)?;
+        update_metadata_with(&mut render_cfg.field_defs, &imported_field_defs);
     }
 
-    if args.occurrences_of("export-event-fields") == 1 {
-        let out_path = args.value_of("export-event-fields").unwrap();
+    if args.occurrences_of("export-metadata") == 1 {
+        let out_path = args.value_of("export-metadata").unwrap();
         let mut out_file : Box<dyn std::io::Write> = if out_path.eq("stdout") {
             Box::from(io::stdout())
         } else {
@@ -259,13 +257,13 @@ EXAMPLES:
             }
         };
         if do_import_system_fields && !system_field_defs_read {
-            match read_field_defs_from_system() {
-                Ok(system_field_defs) => update_field_defs_with(&mut render_cfg.field_defs, &system_field_defs),
-                Err(e) => warn!("Some fields will be left unnamed: unable to read event definitions from system, {}", e),
+            match import_metadata_from_system() {
+                Ok(system_field_defs) => update_metadata_with(&mut render_cfg.field_defs, &system_field_defs),
+                Err(e) => warn!("Some fields will be left unnamed: unable to read metadata from system, {}", e),
             }
             system_field_defs_read = true;
         }
-        return export_field_defs(&render_cfg.field_defs, &mut out_file, render_cfg.json_pretty);
+        return export_metadata_to_file(&render_cfg.field_defs, &mut out_file, render_cfg.json_pretty);
     }
 
     if args.occurrences_of("to-xml") == 1 {
@@ -320,8 +318,8 @@ EXAMPLES:
             }
         };
         if do_import_system_fields && !system_field_defs_read {
-            match read_field_defs_from_system() {
-                Ok(system_field_defs) => update_field_defs_with(&mut render_cfg.field_defs, &system_field_defs),
+            match import_metadata_from_system() {
+                Ok(system_field_defs) => update_metadata_with(&mut render_cfg.field_defs, &system_field_defs),
                 Err(e) => warn!("JSON output will have generic field names: unable to read event definitions from system, {}", e),
             }
             system_field_defs_read = true;
@@ -329,7 +327,7 @@ EXAMPLES:
         render_cfg.render_callback = render_event_json;
         render_cfg.output_file = Box::from(Mutex::new(out_file));
     }
-    info!("Metadata from {} providers imported", render_cfg.field_defs.len());
+    info!("Imported metadata from {} providers", render_cfg.field_defs.len());
 
     if args.occurrences_of("from-backup") == 1 {
         let path = args.value_of("from-backup").unwrap();

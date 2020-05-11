@@ -14,14 +14,14 @@ pub struct EventDefinition {
 }
 
 // Aliased type for ProviderName -> EventID -> Version -> EventDefinition
-pub type EventFieldMapping = BTreeMap<String, BTreeMap<u64, BTreeMap<u64, EventDefinition>>>;
+pub type EventDefinitions = BTreeMap<String, BTreeMap<u64, BTreeMap<u64, EventDefinition>>>;
 
-pub fn read_field_defs_from_system() -> Result<EventFieldMapping, String> {
+pub fn import_metadata_from_system() -> Result<EventDefinitions, String> {
     let mut field_defs = BTreeMap::new();
 
-    info!("Importing event definitions from live system, this may take a while...
-       (use --no-system-fields if you don't care about field names and types,
-        or --export-event-fields then --import-event-fields to only do it once)");
+    info!("Importing metadata from live system, this may take a while...
+       (use --no-system-metadata if you don't care about message strings, field names
+        and types, or use --export-metadata then --import-metadata to only do it once)");
 
     for provider_name in crate::windows::get_evt_provider_names()? {
         match crate::windows::get_evt_provider_event_fields(&provider_name) {
@@ -36,7 +36,7 @@ pub fn read_field_defs_from_system() -> Result<EventFieldMapping, String> {
     Ok(field_defs)
 }
 
-pub fn update_field_defs_with(known_defs: &mut EventFieldMapping, new_defs: &EventFieldMapping) {
+pub fn update_metadata_with(known_defs: &mut EventDefinitions, new_defs: &EventDefinitions) {
     for (provider_name, new_events) in new_defs {
         let known_events = known_defs.entry(provider_name.to_owned()).or_insert(BTreeMap::new());
         for (eventid, new_versions) in new_events {
@@ -60,9 +60,9 @@ pub fn update_field_defs_with(known_defs: &mut EventFieldMapping, new_defs: &Eve
     }
 }
 
-pub fn export_field_defs(field_defs: &EventFieldMapping,
-                     out_file: &mut dyn std::io::Write,
-                     json_pretty: bool) -> Result<(), String> {
+pub fn export_metadata_to_file(field_defs: &EventDefinitions,
+                               out_file: &mut dyn std::io::Write,
+                               json_pretty: bool) -> Result<(), String> {
 
     let json = if json_pretty {
         serde_json::to_string_pretty(&field_defs)
@@ -71,20 +71,20 @@ pub fn export_field_defs(field_defs: &EventFieldMapping,
     };
     let json = match json {
         Ok(s) => s,
-        Err(e) => return Err(format!("Unable to serialize field definitions to JSON: {}", e.to_string())),
+        Err(e) => return Err(format!("Unable to serialize metadata to JSON: {}", e.to_string())),
     };
     match out_file.write(json.as_bytes()) {
         Ok(_) => Ok(()),
-        Err(e) => Err(format!("Unable to write serialized field definitions: {}", e.to_string())),
+        Err(e) => Err(format!("Unable to write serialized metadata: {}", e.to_string())),
     }
 }
 
-pub fn read_field_defs_from_file(in_file: &mut std::fs::File) -> Result<EventFieldMapping, String> {
-    info!("Importing event definitions from file");
+pub fn import_metadata_from_file(in_file: &mut std::fs::File) -> Result<EventDefinitions, String> {
+    info!("Importing metadata from file");
     let mut buf_read = std::io::BufReader::new(in_file);
-    let field_defs : EventFieldMapping = match serde_json::from_reader(&mut buf_read) {
+    let field_defs : EventDefinitions = match serde_json::from_reader(&mut buf_read) {
         Ok(v) => v,
-        Err(e) => return Err(format!("Cannot deserialize JSON from file: {}", e.to_string())),
+        Err(e) => return Err(format!("Cannot deserialize JSON metadata from file: {}", e.to_string())),
     };
     Ok(field_defs)
 }
