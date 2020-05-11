@@ -45,7 +45,7 @@ pub fn render_event_json(h_event: &EvtHandle, common_props: &CommonEventProperti
         }
     }
 
-    let mut event_def = & EventDefinition {
+    let mut event_def = &EventDefinition {
         message: None,
         fields: vec![],
     };
@@ -60,18 +60,38 @@ pub fn render_event_json(h_event: &EvtHandle, common_props: &CommonEventProperti
     let mut event_json = serde_json::Map::new();
     for column in &render_cfg.columns {
         match column {
-            OutputColumn::Hostname => event_json.insert("hostname".to_owned(),
-                      serde_json::value::Value::from(common_props.hostname.to_owned())),
-            OutputColumn::RecordID => event_json.insert("recordid".to_owned(),
-                      serde_json::value::Value::from(common_props.recordid)),
-            OutputColumn::Timestamp => event_json.insert("timestamp".to_owned(),
-                      serde_json::value::Value::from(format_utc_systemtime(&common_props.timestamp, &render_cfg.datefmt))),
-            OutputColumn::Provider => event_json.insert("provider".to_owned(),
-                  serde_json::value::Value::from(common_props.provider.to_owned())),
-            OutputColumn::EventID => event_json.insert("eventid".to_owned(),
-                  serde_json::value::Value::from(common_props.eventid)),
-            OutputColumn::Version => event_json.insert("version".to_owned(),
-                  serde_json::value::Value::from(common_props.version)),
+            OutputColumn::Hostname => { event_json.insert("hostname".to_owned(),
+                      serde_json::value::Value::from(common_props.hostname.to_owned())); }
+            OutputColumn::RecordID => { event_json.insert("recordid".to_owned(),
+                      serde_json::value::Value::from(common_props.recordid)); }
+            OutputColumn::Timestamp => { event_json.insert("timestamp".to_owned(),
+                      serde_json::value::Value::from(format_utc_systemtime(&common_props.timestamp, &render_cfg.datefmt))); }
+            OutputColumn::Provider => { event_json.insert("provider".to_owned(),
+                  serde_json::value::Value::from(common_props.provider.to_owned())); }
+            OutputColumn::EventID => { event_json.insert("eventid".to_owned(),
+                  serde_json::value::Value::from(common_props.eventid)); }
+            OutputColumn::Version => { event_json.insert("version".to_owned(),
+                  serde_json::value::Value::from(common_props.version)); }
+            OutputColumn::UnformattedMessage => {
+                if let Some(template) = &event_def.message {
+                    event_json.insert("message".to_owned(),serde_json::value::Value::from(template.to_owned()));
+                }
+            },
+            OutputColumn::FormattedMessage => {
+                if let Some(template) = &event_def.message {
+                    match crate::windows::format_event_message(&event_def, buffer.as_ptr() as *const EVT_VARIANT, props_count) {
+                        Ok(message) => {
+                            event_json.insert("message".to_owned(), serde_json::value::Value::from(message));
+                        },
+                        Err(e) => {
+                            warn!("Unable to format template \"{}\" of event {}/{}/{}: {}",
+                                  template, common_props.provider, common_props.eventid,
+                                  common_props.version, e);
+                            event_json.insert("message".to_owned(), serde_json::value::Value::from(template.to_owned()));
+                        },
+                    }
+                }
+            },
             OutputColumn::EventSpecific(prop_num) => {
                 if *prop_num > props_count {
                     // The referenced field number does not exist for this event,
@@ -105,7 +125,7 @@ pub fn render_event_json(h_event: &EvtHandle, common_props: &CommonEventProperti
                     EvtVariant::DateTime(d) => serde_json::value::Value::from(
                         format_utc_systemtime(&d, &render_cfg.datefmt)),
                 };
-                event_json.insert(field_def.name.to_owned(), json_value)
+                event_json.insert(field_def.name.to_owned(), json_value);
             },
         };
     }

@@ -69,7 +69,9 @@ COMMON:
  -V --version                          Display the current version
  -v --verbose                          Increase verbosity (can be repeated for more information)
  -O --columns                          Comma-separated list of columns to include in JSON, CSV, and TSV outputs
-        (default: hostname,recordid,timestamp,provider,eventid,version,variant1,...,variant15)
+        (default: hostname,recordid,timestamp,provider,eventid,version,formatted_message,variant1,...,variant15)
+        (use 'unformatted_message' or remove the field altogether if you don't want to duplicate
+         information with the variant1-N fields, or if you only care about individual fields)
     --datefmt                          Change the default format for all date-times
         (default: %Y-%m-%dT%H:%M:%S%.3f%z)
 
@@ -192,7 +194,7 @@ EXAMPLES:
             .short("O")
             .long("columns")
             .takes_value(true)
-            .default_value("hostname,recordid,timestamp,provider,eventid,version,variant1,...,variant15"))
+            .default_value("hostname,recordid,timestamp,provider,eventid,version,formatted_message,variant1,...,variant15"))
         //.group(ArgGroup::with_name("source").args(&["from-host", "from-backup"]))
         //TODO: ArgGroups with mutual exclusion
         .get_matches();

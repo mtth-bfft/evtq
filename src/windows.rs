@@ -15,8 +15,18 @@ use crate::RenderingConfig;
 use crate::event_defs::{EventFieldDefinition, EventDefinition};
 use crate::formatting::{EvtVariant, CommonEventProperties, get_event_common_properties, unwrap_variant_contents};
 use winapi::shared::minwindef::DWORD;
+use std::str::FromStr;
 
 const INFINITE : u32 = 0xFFFFFFFF;
+
+#[derive(Debug, PartialEq)]
+enum EventFormatterState {
+    LookingForEndOfUnformattedChunk { chunk_start_pos: usize },
+    RightAfterPercentInUnformattedChunk { chunk_start_pos: usize },
+    LookingForEndOfFormatNumber { number_start_pos: usize },
+    LookingForEndOfFormatSpec,
+    EndOfString,
+}
 
 pub struct EvtHandle {
     handle: NonNull<c_void>,
@@ -607,4 +617,108 @@ pub fn render_event(h_event: &EvtHandle, render_cfg: &RenderingConfig) -> Result
     }
 
     Ok(())
+}
+
+// This does not support %%N syntax (references to system-wide message IDs,
+// see https://docs.microsoft.com/en-us/windows/win32/api/winevt/nf-winevt-evtformatmessage)
+// because I didn't find a way to query them and include them in the event
+// definition JSON dump. That shouldn't be a problem, since only one event
+// in one useless provider seems to use that syntax it as of 1909.
+// This also doesn't support format string like %3!S! on purpose, since the
+// actual formatting and argument type is determined by our own formatting
+// function (see comment inside).
+pub fn format_event_message(event_def: &EventDefinition, variants: *const EVT_VARIANT, variant_count: u32) -> Result<String, String> {
+    // We can't use EvtFormatMessage() because that would require holding a
+    // handle to the metadata of the provider which generated that event,
+    // and we must be able to format messages offline.
+    // We can't use FormatMessage() either, which assumes that %1 means %1!s!
+    // so it would require formatting all variants (SIDs, GUIDs, int, etc.)
+    // to strings beforehand, and would probably conflict with the few events
+    // which take care to define the format string they expect (e.g. %1!S!
+    // would make FormatMessage() parse our wide-string-formatted-variant as
+    // an ANSI string).
+    // The format syntax is way more complicated than replace('%1', args[1]):
+    // it supports the entire printf format specification
+    // (e.g. %1!*.*s! %4 %5!*s!", see
+    // https://docs.microsoft.com/fr-fr/windows/win32/api/winbase/nf-winbase-formatmessage )
+
+    let template = match &event_def.message {
+        Some(t) => t,
+        None => return Err(format!("Cannot format event without template")),
+    };
+
+    // Cache for the result of each EVT_VARIANT formatting to string
+    let mut formatted_variants: Vec<Option<String>> = vec![None; variant_count as usize];
+    let mut res = String::new(); // the final returned String
+    let mut state = EventFormatterState::LookingForEndOfUnformattedChunk { chunk_start_pos: 0 };
+    for (pos, c) in template.chars().chain(vec!['\0'].into_iter()).enumerate() {
+        state = match (c, state) {
+            ('%', EventFormatterState::LookingForEndOfUnformattedChunk { chunk_start_pos }) =>
+                EventFormatterState::RightAfterPercentInUnformattedChunk { chunk_start_pos },
+            ('%', EventFormatterState::RightAfterPercentInUnformattedChunk { chunk_start_pos }) =>
+                EventFormatterState::LookingForEndOfUnformattedChunk { chunk_start_pos },
+            (c, EventFormatterState::RightAfterPercentInUnformattedChunk { chunk_start_pos }) if c.is_digit(10) => {
+                res.push_str(&template[chunk_start_pos..pos - 1]);
+                EventFormatterState::LookingForEndOfFormatNumber { number_start_pos: pos }
+            }
+            (c, EventFormatterState::LookingForEndOfFormatNumber { number_start_pos }) if !c.is_digit(10) => {
+                let fmt_num = match u32::from_str(&template[number_start_pos..pos]) {
+                    Ok(fmt_num) => fmt_num,
+                    Err(_) => return Err(format!("Unable to parse format argument number from \"{}\"",
+                        &template[number_start_pos..pos])),
+                };
+                let fmt_idx = (fmt_num as usize) - 1;
+                if fmt_num > variant_count {
+                    return Err(format!("Format argument number out-of-range ({}, only {} variants)",
+                        fmt_num, variant_count));
+                }
+                if formatted_variants[fmt_idx].is_none() {
+                    let buffer_offset = fmt_idx * std::mem::size_of::<EVT_VARIANT>();
+                    let prop : EVT_VARIANT = unsafe {
+                        std::ptr::read((variants as *const u8).add(buffer_offset) as *const _)
+                    };
+                    let type_hint = if fmt_idx < event_def.fields.len() {
+                        Some(&event_def.fields[fmt_idx].out_type[..])
+                    } else {
+                        None
+                    };
+                    let prop = unwrap_variant_contents(&prop, type_hint)?;
+                    let str_to_insert = match prop {
+                        EvtVariant::Null => "null".to_string(),
+                        EvtVariant::String(s) => s,
+                        EvtVariant::UInt(u) => format!("{}", u),
+                        EvtVariant::Int(i) => format!("{}", i),
+                        EvtVariant::Single(f) => format!("{}", f),
+                        EvtVariant::Double(d) => format!("{}", d),
+                        EvtVariant::Boolean(b) => (if b { "true" } else { "false" }).to_string(),
+                        EvtVariant::Binary(v) => format!("{:?}", v),
+                        EvtVariant::DateTime(d) => format!("{}-{}-{} {}:{}:{}.{}",
+                                                           d.wYear, d.wMonth, d.wDay, d.wHour,
+                                                           d.wMinute, d.wSecond, d.wMilliseconds),
+                    };
+                    formatted_variants[fmt_idx] = Some(str_to_insert);
+                }
+                res.push_str(formatted_variants[fmt_idx].as_ref().unwrap());
+                if c == '!' {
+                    EventFormatterState::LookingForEndOfFormatSpec
+                } else if pos == template.len() {
+                    EventFormatterState::EndOfString
+                }
+                else {
+                    EventFormatterState::LookingForEndOfUnformattedChunk { chunk_start_pos: pos }
+                }
+            },
+            ('!', EventFormatterState::LookingForEndOfFormatSpec) =>
+                EventFormatterState::LookingForEndOfUnformattedChunk { chunk_start_pos: pos + 1 },
+            ('\0', EventFormatterState::LookingForEndOfUnformattedChunk { chunk_start_pos }) => {
+                res.push_str(&template[chunk_start_pos..pos - 1]);
+                EventFormatterState::EndOfString
+            },
+            (_, state) => state,
+        };
+    }
+    if state != EventFormatterState::EndOfString {
+        return Err(format!("Unexpected final parser state {:?}", state));
+    }
+    Ok(res)
 }

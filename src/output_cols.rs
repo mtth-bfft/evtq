@@ -8,8 +8,9 @@ pub enum OutputColumn {
     Provider,
     EventID,
     Version,
-    // 1-indexed event-specific data field
-    EventSpecific(u32),
+    EventSpecific(u32), // 1-indexed event-specific data field
+    UnformattedMessage, // Template string, if any
+    FormattedMessage, // Formatted template string, if any
 }
 
 pub fn parse_column_names(names: &str) -> Result<Vec<OutputColumn>, String> {
@@ -30,6 +31,8 @@ pub fn parse_column_names(names: &str) -> Result<Vec<OutputColumn>, String> {
             "provider" => OutputColumn::Provider,
             "eventid" => OutputColumn::EventID,
             "version" => OutputColumn::Version,
+            "unformatted_message" => OutputColumn::UnformattedMessage,
+            "formatted_message" => OutputColumn::FormattedMessage,
             s if s.starts_with("variant") => {
                 let s = s.replace("variant", "");
                 let prop_num = match s.parse::<u32>() {

@@ -6,6 +6,7 @@ use winapi::ctypes::c_void;
 use crate::windows::{EvtHandle, get_win32_errcode};
 use crate::{RenderingConfig, OutputColumn};
 use crate::formatting::{unwrap_variant_contents, bytes_as_hexstring, format_utc_systemtime, CommonEventProperties, EvtVariant};
+use crate::event_defs::EventDefinition;
 
 fn push_filtered_str(dest: &mut String, append: &str, forbidden: &char) {
     dest.push_str(&append.replace(&forbidden.to_string(), " "))
@@ -49,6 +50,18 @@ pub fn render_event_csv(h_event: &EvtHandle, common_props: &CommonEventPropertie
         }
     }
 
+    let mut event_def = &EventDefinition {
+        message: None,
+        fields: vec![],
+    };
+    if let Some(events) = render_cfg.field_defs.get(&common_props.provider) {
+        if let Some(versions) = events.get(&common_props.eventid) {
+            if let Some(known_event_def) = versions.get(&common_props.version) {
+                event_def = known_event_def;
+            }
+        }
+    }
+
     let mut line = String::new();
     let mut first = true;
     for column in &render_cfg.columns {
@@ -75,6 +88,27 @@ pub fn render_event_csv(h_event: &EvtHandle, common_props: &CommonEventPropertie
             OutputColumn::Version => push_filtered_str(&mut line,
                                                        &common_props.version.to_string(),
                                                        &render_cfg.field_separator),
+            OutputColumn::UnformattedMessage => {
+                if let Some(template) = &event_def.message {
+                    push_filtered_str(&mut line, template, &render_cfg.field_separator);
+                }
+            },
+            OutputColumn::FormattedMessage => {
+                if let Some(template) = &event_def.message {
+                    match crate::windows::format_event_message(&event_def, buffer.as_ptr() as *const EVT_VARIANT, props_count) {
+                        Ok(message) => {
+                            push_filtered_str(&mut line, &message, &render_cfg.field_separator);
+                        },
+                        Err(e) => {
+                            warn!("Unable to format template \"{}\" of event {}/{}/{}: {}",
+                                  template, common_props.provider, common_props.eventid,
+                                  common_props.version, e);
+                            push_filtered_str(&mut line, &template, &render_cfg.field_separator);
+                        },
+                    }
+                }
+            },
+
             OutputColumn::EventSpecific(prop_num) => {
                 if prop_num >= &props_count {
                     break; // silently truncate lines which reference non-existent fields
