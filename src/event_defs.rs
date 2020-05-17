@@ -24,6 +24,8 @@ pub fn import_metadata_from_system() -> Result<EventDefinitions, String> {
         and types, or use --export-metadata then --import-metadata to only do it once)");
 
     for provider_name in crate::windows::get_evt_provider_names()? {
+        verbose!("Querying provider {}", provider_name);
+
         match crate::windows::get_evt_provider_event_fields(&provider_name) {
             Ok(events) => field_defs.insert(provider_name, events),
             Err(e) => {

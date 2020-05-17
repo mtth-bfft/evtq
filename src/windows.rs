@@ -219,19 +219,14 @@ pub fn get_evt_provider_event_fields(provider_name: &str) -> Result<BTreeMap<u64
             Ok(_) => return Err(format!("Unexpected value type returned for EventTemplate")),
             Err(e) => return Err(e),
         };
-
-        if fields_template.len() == 0 {
-            continue;
-        }
-
         let message_id = match get_evt_metadata(&h_evt, EventMetadataEventMessageID) {
             Ok(EvtVariant::UInt(id)) if id <= (std::u32::MAX as u64) => id,
             Ok(_) => return Err(format!("Unexpected value type returned for EventMessageID")),
             Err(e) => return Err(e),
         };
 
-        // message_id == (DWORD)(-1) means the provider doesn't have a message string for that event
         let mut message: Option<String> = None;
+        // message_id == (DWORD)(-1) means the provider doesn't have a message string for that event
         if message_id < 4294967295 {
             let mut buffer_req: DWORD = 0;
             let res = unsafe {
@@ -262,44 +257,46 @@ pub fn get_evt_provider_event_fields(provider_name: &str) -> Result<BTreeMap<u64
         }
 
         // Parse field names from the template XML
-        let xml = match roxmltree::Document::parse(&fields_template) {
-            Ok(d) => d,
-            Err(e) => {
-                warn!("Event {} #{} version {} : unable to parse XML template: {}",
-                          provider_name, event_id, version, e);
-                continue;
-            },
-        };
-        if !xml.root_element().has_tag_name("template") {
-            warn!("Event {} #{} version {} has invalid XML template root node:\n{}",
-                      provider_name, event_id, version, fields_template);
-            continue;
-        }
         let mut fields : Vec<EventFieldDefinition> = Vec::new();
-        for field_node in xml.root_element().children() {
-            if !field_node.is_element() {
-                continue; // skip any comment
+        if fields_template.len() > 0 {
+            let xml = match roxmltree::Document::parse(&fields_template) {
+                Ok(d) => d,
+                Err(e) => {
+                    warn!("Event {} #{} version {} : unable to parse XML template: {}",
+                          provider_name, event_id, version, e);
+                    continue;
+                },
+            };
+            if !xml.root_element().has_tag_name("template") {
+                warn!("Event {} #{} version {} has invalid XML template root node:\n{}",
+                      provider_name, event_id, version, fields_template);
+                continue;
             }
-            if !field_node.has_tag_name("data") {
-                if field_node.has_tag_name("struct") {
-                    continue; // see issue #2
+            for field_node in xml.root_element().children() {
+                if !field_node.is_element() {
+                    continue; // skip any comment
                 }
-                warn!("Event {} ID={} version={} has unexpected XML data node '{}':\n{}",
+                if !field_node.has_tag_name("data") {
+                    if field_node.has_tag_name("struct") {
+                        continue; // see issue #2
+                    }
+                    warn!("Event {} ID={} version={} has unexpected XML data node '{}':\n{}",
                           provider_name, event_id, version, field_node.tag_name().name(), fields_template);
-                break;
-            };
-            if let (Some(name), Some(out_type)) = (field_node.attribute("name"),
-                                                   field_node.attribute("outType")) {
-                let field_def = EventFieldDefinition {
-                    name: name.to_owned(),
-                    out_type: out_type.to_owned(),
+                    break;
                 };
-                fields.push(field_def);
-            } else {
-                warn!("Event {} #{} version {} has incomplete XML data node:\n{}",
+                if let (Some(name), Some(out_type)) = (field_node.attribute("name"),
+                                                       field_node.attribute("outType")) {
+                    let field_def = EventFieldDefinition {
+                        name: name.to_owned(),
+                        out_type: out_type.to_owned(),
+                    };
+                    fields.push(field_def);
+                } else {
+                    warn!("Event {} #{} version {} has incomplete XML data node:\n{}",
                           provider_name, event_id, version, fields_template);
-                break;
-            };
+                    break;
+                };
+            }
         }
 
         // Insert everything into the final hashmap
