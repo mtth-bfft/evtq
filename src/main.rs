@@ -91,9 +91,13 @@ COMMON:
  -V --version                       Display the current version
  -v --verbose                       Increase verbosity (can be repeated for extra information)
  -O --columns                       Comma-separated list of columns to output in JSON, CSV, or TSV
-      (default: hostname,recordid,timestamp,provider,eventid,version,formatted_message,variant1,...,variant15)
-      (use 'unformatted_message' or remove 'formatted_message' if you don't want to duplicate
-       information with the variantN fields, or if you only care about individual fields)
+      (default: hostname,recordid,timestamp,provider,eventid,version,level_name,task_name,
+                keyword_names,formatted_message,variant1,...,variant15)
+      (possible fields: hostname           provider              level         level_name
+                        recordid           eventid               task          task_name
+                        timestamp          version               opcode        opcode_name
+                        formatted_message  unformatted_message   keywords      keyword_names
+                        variant1           variant2              variant3  ..  variant15
     --no-system-metadata            Don't load field names, types, and message strings from the live OS
     --export-metadata <meta.json>   Export metadata to file
     --import-metadata <meta.json>   Import and use metadata from file
@@ -192,7 +196,7 @@ EXAMPLES:
             .short("O")
             .long("columns")
             .takes_value(true)
-            .default_value("hostname,recordid,timestamp,provider,eventid,version,formatted_message,variant1,...,variant15"))
+            .default_value("hostname,recordid,timestamp,provider,eventid,version,level_name,task_name,keyword_names,formatted_message,variant1,...,variant15"))
         //.group(ArgGroup::with_name("source").args(&["from-host", "from-backup"]))
         //TODO: ArgGroups with mutual exclusion
         .get_matches();

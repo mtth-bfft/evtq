@@ -22,6 +22,7 @@ pub struct CommonEventProperties {
 pub enum EvtVariant {
     Null,
     String(String),
+    Handle(EvtHandle),
     UInt(u64),
     Int(i64),
     Single(f32),
@@ -195,11 +196,19 @@ pub fn unwrap_variant_contents(variant: &EVT_VARIANT, type_hint: Option<&str>) -
         EvtVarTypeHexInt64 => {
             let val : u64 = unsafe { std::ptr::read(&variant.u as *const _ as *const u64) };
             EvtVariant::UInt(val)
-        }
+        },
         EvtVarTypeHexInt32 => {
             let val : u32 = unsafe { std::ptr::read(&variant.u as *const _ as *const u32) };
             EvtVariant::UInt(val as u64)
-        }
+        },
+        EvtVarTypeEvtHandle => {
+            let val: EVT_HANDLE = unsafe { std::ptr::read(&variant.u as *const _ as *const EVT_HANDLE) };
+            let handle = match EvtHandle::from_raw(val) {
+                Ok(h) => h,
+                Err(e) => return Err(format!("Unable to unwrap EvtVarTypeEvtHandle variant: {}", e)),
+            };
+            EvtVariant::Handle(handle)
+        },
         unknown => {
             return Err(format!("Unsupported EVT_VARIANT type {} (count {}) (contents {})",
                                unknown, variant.Count, unsafe { std::ptr::read(&variant.u as *const _ as *const u64) }))

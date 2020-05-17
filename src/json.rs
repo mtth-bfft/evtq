@@ -47,6 +47,14 @@ pub fn render_event_json(h_event: &EvtHandle, common_props: &CommonEventProperti
 
     let mut event_def = &EventDefinition {
         message: None,
+        level: 0,
+        level_name: None,
+        opcode: 0,
+        opcode_name: None,
+        keywords: 0,
+        keyword_names: vec![],
+        task: 0,
+        task_name: None,
         fields: vec![],
     };
     if let Some(events) = render_cfg.field_defs.get(&common_props.provider) {
@@ -72,6 +80,31 @@ pub fn render_event_json(h_event: &EvtHandle, common_props: &CommonEventProperti
                   serde_json::value::Value::from(common_props.eventid)); }
             OutputColumn::Version => { event_json.insert("version".to_owned(),
                   serde_json::value::Value::from(common_props.version)); }
+            OutputColumn::Level => { event_json.insert("level".to_owned(),
+                  serde_json::value::Value::from(event_def.level)); }
+            OutputColumn::LevelName => { event_json.insert("level_name".to_owned(),
+                  match &event_def.level_name {
+                      Some(s) => serde_json::value::Value::from(s.to_owned()),
+                      None => serde_json::value::Value::Null,
+                  }); },
+            OutputColumn::Task => { event_json.insert("task".to_owned(),
+                  serde_json::value::Value::from(event_def.task)); }
+            OutputColumn::TaskName => { event_json.insert("task_name".to_owned(),
+                  match &event_def.task_name {
+                      Some(s) => serde_json::value::Value::from(s.to_owned()),
+                      None => serde_json::value::Value::Null,
+                  }); },
+            OutputColumn::Opcode => { event_json.insert("opcode".to_owned(),
+                  serde_json::value::Value::from(event_def.opcode)); }
+            OutputColumn::OpcodeName => { event_json.insert("opcode_name".to_owned(),
+                  match &event_def.opcode_name {
+                      Some(s) => serde_json::value::Value::from(s.to_owned()),
+                      None => serde_json::value::Value::Null,
+                  }); },
+            OutputColumn::Keywords => { event_json.insert("keywords".to_owned(),
+                  serde_json::value::Value::from(event_def.keywords)); }
+            OutputColumn::KeywordNames => { event_json.insert("keyword_names".to_owned(),
+                  serde_json::value::Value::from(&event_def.keyword_names[..])); }
             OutputColumn::UnformattedMessage => {
                 if let Some(template) = &event_def.message {
                     event_json.insert("message".to_owned(),serde_json::value::Value::from(template.to_owned()));
@@ -115,6 +148,7 @@ pub fn render_event_json(h_event: &EvtHandle, common_props: &CommonEventProperti
                 let prop = unwrap_variant_contents(&prop, Some(&field_def.out_type))?;
                 let json_value = match prop {
                     EvtVariant::Null => serde_json::value::Value::Null,
+                    EvtVariant::Handle(_) => serde_json::value::Value::from("<handle>"),
                     EvtVariant::String(s) => serde_json::value::Value::from(s),
                     EvtVariant::UInt(i) => serde_json::value::Value::from(i),
                     EvtVariant::Int(i) => serde_json::value::Value::from(i),

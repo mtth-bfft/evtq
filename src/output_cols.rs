@@ -8,6 +8,14 @@ pub enum OutputColumn {
     Provider,
     EventID,
     Version,
+    Level,
+    LevelName,
+    Task,
+    TaskName,
+    Opcode,
+    OpcodeName,
+    Keywords,
+    KeywordNames,
     EventSpecific(u32), // 1-indexed event-specific data field
     UnformattedMessage, // Template string, if any
     FormattedMessage, // Formatted template string, if any
@@ -31,6 +39,14 @@ pub fn parse_column_names(names: &str) -> Result<Vec<OutputColumn>, String> {
             "provider" => OutputColumn::Provider,
             "eventid" => OutputColumn::EventID,
             "version" => OutputColumn::Version,
+            "level" => OutputColumn::Level,
+            "level_name" => OutputColumn::LevelName,
+            "task" => OutputColumn::Task,
+            "task_name" => OutputColumn::TaskName,
+            "opcode" => OutputColumn::Opcode,
+            "opcode_name" => OutputColumn::OpcodeName,
+            "keywords" => OutputColumn::Keywords,
+            "keyword_names" => OutputColumn::KeywordNames,
             "unformatted_message" => OutputColumn::UnformattedMessage,
             "formatted_message" => OutputColumn::FormattedMessage,
             s if s.starts_with("variant") => {

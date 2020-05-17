@@ -52,6 +52,14 @@ pub fn render_event_csv(h_event: &EvtHandle, common_props: &CommonEventPropertie
 
     let mut event_def = &EventDefinition {
         message: None,
+        level: 0,
+        level_name: None,
+        opcode: 0,
+        opcode_name: None,
+        keywords: 0,
+        keyword_names: vec![],
+        task: 0,
+        task_name: None,
         fields: vec![],
     };
     if let Some(events) = render_cfg.field_defs.get(&common_props.provider) {
@@ -88,6 +96,39 @@ pub fn render_event_csv(h_event: &EvtHandle, common_props: &CommonEventPropertie
             OutputColumn::Version => push_filtered_str(&mut line,
                                                        &common_props.version.to_string(),
                                                        &render_cfg.field_separator),
+            OutputColumn::Level => push_filtered_str(&mut line,
+                                                       &event_def.level.to_string(),
+                                                       &render_cfg.field_separator),
+            OutputColumn::LevelName => match &event_def.level_name {
+                Some(s) => push_filtered_str(&mut line,
+                                             s,
+                                             &render_cfg.field_separator),
+                None => (),
+            },
+            OutputColumn::Task => push_filtered_str(&mut line,
+                                                       &event_def.task.to_string(),
+                                                       &render_cfg.field_separator),
+            OutputColumn::TaskName => match &event_def.task_name {
+                Some(s) => push_filtered_str(&mut line,
+                                             s,
+                                             &render_cfg.field_separator),
+                None => (),
+            },
+            OutputColumn::Opcode => push_filtered_str(&mut line,
+                                                       &event_def.opcode.to_string(),
+                                                       &render_cfg.field_separator),
+            OutputColumn::OpcodeName => match &event_def.opcode_name {
+                Some(s) => push_filtered_str(&mut line,
+                                             s,
+                                             &render_cfg.field_separator),
+                None => (),
+            },
+            OutputColumn::Keywords => push_filtered_str(&mut line,
+                                                       &event_def.keywords.to_string(),
+                                                       &render_cfg.field_separator),
+            OutputColumn::KeywordNames => push_filtered_str(&mut line,
+                                                       &event_def.keyword_names.join(","),
+                                                       &render_cfg.field_separator),
             OutputColumn::UnformattedMessage => {
                 if let Some(template) = &event_def.message {
                     push_filtered_str(&mut line, template, &render_cfg.field_separator);
@@ -120,6 +161,9 @@ pub fn render_event_csv(h_event: &EvtHandle, common_props: &CommonEventPropertie
                 let prop = unwrap_variant_contents(&prop, None)?;
                 match prop {
                     EvtVariant::Null => (),
+                    EvtVariant::Handle(_) => push_filtered_str(&mut line,
+                                                               "<handle>",
+                                                               &render_cfg.field_separator),
                     EvtVariant::String(s) => push_filtered_str(&mut line,
                                                                       &s,
                                                                       &render_cfg.field_separator),

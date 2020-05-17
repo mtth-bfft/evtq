@@ -19,6 +19,38 @@ use std::str::FromStr;
 
 const INFINITE : u32 = 0xFFFFFFFF;
 
+// System-wide standard levels defined by Windows. Event-provider-specific levels
+// are queried at runtime.
+const SYSTEM_LEVELS: &[(u32, &'static str, &'static str)] = &[
+    (0, "win:LogAlways", "Log Always"),
+    (1, "win:Critical", "Only critical errors"),
+    (2, "win:Error", "All errors, includes win:Critical"),
+    (3, "win:Warning", "All warnings, includes win:Error"),
+    (4, "win:Informational", "All informational content, including win:Warning"),
+    (5, "win:Verbose", "All tracing, including previous levels"),
+];
+
+// System-wide tasks defined by Windows. Event-provider-specific tasks
+// are queried at runtime.
+const SYSTEM_TASKS: &[(u32, &'static str, &'static str)] = &[
+    (0, "win:None", "undefined task"),
+];
+
+// System-wide opcodes defined by Windows. Event-provider-specific opcodes
+// are queried at runtime.
+const SYSTEM_OPCODES: &[(u32, &'static str, &'static str)] = &[
+    (0, "win:None", "An informational event"),
+    (1, "win:Start", "An activity start event"),
+    (2, "win:Stop", "An activity end event"),
+    (3, "win:DC_Start", "A trace collection start event"),
+    (4, "win:DC_Stop", "A trace collection end event"),
+    (5, "win:Extension", "An extensional event"),
+    (6, "win:Reply", "A reply event"),
+    (7, "win:Resume", "An event representing the activity resuming from the suspension"),
+    (8, "win:Suspend", "An event representing the activity is suspended, pending another activity's completion"),
+    (9, "win:Send", "An event representing the activity is transferred to another component, and can continue to work"),
+];
+
 #[derive(Debug, PartialEq)]
 enum EventFormatterState {
     LookingForEndOfUnformattedChunk { chunk_start_pos: usize },
@@ -37,6 +69,13 @@ pub struct RpcCredentials<'a> {
     pub domain: &'a str,
     pub username: &'a str,
     pub password: &'a str,
+}
+
+pub fn get_system_standard_val(arr: &'static [(u32, &'static str, &'static str)], val: u32) -> Option<(&'static str, &'static str)> {
+    match arr.binary_search_by(|(k, _, _)| k.cmp(&val)) {
+        Ok(i) => Some((&arr[i].1, &arr[i].2)),
+        _ => None,
+    }
 }
 
 impl EvtHandle {
@@ -160,6 +199,26 @@ pub fn get_evt_provider_names() -> Result<Vec<String>, String> {
     Ok(result)
 }
 
+fn get_evt_provider_metadata(h_provmeta: &EvtHandle, prop: EVT_PUBLISHER_METADATA_PROPERTY_ID) -> Result<EvtVariant, String> {
+    let mut buffer: Vec<u8> = Vec::new();
+    let mut buffer_len_req: u32 = 0;
+    let res = unsafe {
+        EvtGetPublisherMetadataProperty(h_provmeta.as_ptr(), prop, 0, 0, null_mut(), &mut buffer_len_req)
+    };
+    if res != 0 || get_win32_errcode() != ERROR_INSUFFICIENT_BUFFER {
+        return Err(format!("EvtGetPublisherMetadataProperty() failed with code {}", get_win32_errcode()));
+    }
+    buffer.resize(buffer_len_req as usize, 0);
+    let res = unsafe {
+        EvtGetPublisherMetadataProperty(h_provmeta.as_ptr(), prop, 0, buffer_len_req, buffer.as_mut_ptr() as PEVT_VARIANT, &mut buffer_len_req)
+    };
+    if res == 0 {
+        return Err(format!("EvtGetPublisherMetadataProperty() failed with code {}", get_win32_errcode()));
+    }
+    let evt_variant : EVT_VARIANT = unsafe { std::ptr::read(buffer.as_ptr() as *const _) };
+    unwrap_variant_contents(&evt_variant, None)
+}
+
 fn get_evt_metadata(h_evt: &EvtHandle, prop: EVT_EVENT_METADATA_PROPERTY_ID) -> Result<EvtVariant, String> {
     let mut buffer: Vec<u8> = Vec::new();
     let mut buffer_len_req: u32 = 0;
@@ -171,7 +230,7 @@ fn get_evt_metadata(h_evt: &EvtHandle, prop: EVT_EVENT_METADATA_PROPERTY_ID) -> 
     }
     buffer.resize(buffer_len_req as usize, 0);
     let res = unsafe {
-        EvtGetEventMetadataProperty(h_evt.as_ptr(), prop, 0, buffer.capacity() as u32, buffer.as_mut_ptr() as PEVT_VARIANT, &mut buffer_len_req)
+        EvtGetEventMetadataProperty(h_evt.as_ptr(), prop, 0, buffer_len_req, buffer.as_mut_ptr() as PEVT_VARIANT, &mut buffer_len_req)
     };
     if res == 0 {
         return Err(format!("EvtGetEventMetadataProperty() failed with code {}", get_win32_errcode()));
@@ -180,12 +239,151 @@ fn get_evt_metadata(h_evt: &EvtHandle, prop: EVT_EVENT_METADATA_PROPERTY_ID) -> 
     unwrap_variant_contents(&evt_variant, None)
 }
 
+fn get_evt_array_len(h_array: &EvtHandle) -> Result<DWORD, String> {
+    let mut len: DWORD = 0;
+    let res = unsafe { EvtGetObjectArraySize(h_array.as_ptr(),
+                                             &mut len as *mut DWORD) };
+    if res == 0 {
+        return Err(format!("EvtGetObjectArraySize() failed with code {}", get_win32_errcode()));
+    }
+    Ok(len)
+}
+
+fn get_evt_array_prop(h_array: &EvtHandle, prop: EVT_PUBLISHER_METADATA_PROPERTY_ID, idx: DWORD) -> Result<EvtVariant, String> {
+    let mut buffer: Vec<u8> = Vec::new();
+    let mut buffer_len_req: u32 = 0;
+    let res = unsafe {
+        EvtGetObjectArrayProperty(h_array.as_ptr(),
+                                  prop,
+                                  idx,
+                                  0,
+                                  0,
+                                  null_mut(),
+                                  &mut buffer_len_req as *mut u32)
+    };
+    if res != 0 || get_win32_errcode() != ERROR_INSUFFICIENT_BUFFER {
+        return Err(format!("EvtGetObjectArrayProperty({}, {}) failed with code {}",
+                           prop, idx, get_win32_errcode()));
+    }
+    buffer.resize(buffer_len_req as usize, 0);
+    let res = unsafe {
+        EvtGetObjectArrayProperty(h_array.as_ptr(),
+                                  prop,
+                                  idx,
+                                  0,
+                                  buffer_len_req,
+                                  buffer.as_mut_ptr() as *mut _,
+                                  &mut buffer_len_req as *mut u32)
+    };
+    if res == 0 {
+        return Err(format!("EvtGetObjectArrayProperty({}, {}) failed with code {}",
+                           prop, idx, get_win32_errcode()));
+    }
+    let evt_variant : EVT_VARIANT = unsafe { std::ptr::read(buffer.as_ptr() as *const _) };
+    unwrap_variant_contents(&evt_variant, None)
+}
+
+pub fn get_evt_prov_metadata_mapping(h_provmeta: &EvtHandle,
+                                     array_prop: EVT_PUBLISHER_METADATA_PROPERTY_ID,
+                                     key_prop: EVT_PUBLISHER_METADATA_PROPERTY_ID,
+                                     val_prop: EVT_PUBLISHER_METADATA_PROPERTY_ID,
+) -> Result<BTreeMap<u64, String>, String> {
+
+    let h_array = match get_evt_provider_metadata(h_provmeta, array_prop) {
+        Ok(EvtVariant::Handle(h)) => h,
+        Ok(_) => return Err(format!("Unexpected metadata value type returned for mapping type {}", array_prop)),
+        Err(e) => return Err(e),
+    };
+    let mut mapping = BTreeMap::new();
+    let num_vals = match get_evt_array_len(&h_array) {
+        Ok(n) => n,
+        Err(e) => {
+            warn!("Unable to query provider-defined mapping type {} length: {}", array_prop, e);
+            0
+        },
+    };
+    for idx in 0..num_vals {
+        let key = match get_evt_array_prop(&h_array, key_prop, idx) {
+            Ok(EvtVariant::UInt(u)) => u,
+            Ok(_) => {
+                warn!("Unable to query some provider-defined mapping type {}: unexpected type returned as key", array_prop);
+                break;
+            }
+            Err(e) => {
+                warn!("Unable to query some provider-defined mapping type {}: {}", array_prop, e);
+                break;
+            },
+        };
+        let val = match get_evt_array_prop(&h_array, val_prop, idx) {
+            Ok(EvtVariant::String(s)) => s,
+            Ok(_) => {
+                warn!("Unable to query some provider-defined mapping type {}: unexpected type returned as val", array_prop);
+                break;
+            }
+            Err(e) => {
+                warn!("Unable to query some provider-defined mapping type {}: {}", array_prop, e);
+                break;
+            },
+        };
+        mapping.insert(key, val);
+    }
+    Ok(mapping)
+}
+
 // Returns a map from Event ID -> Version -> EventDefinition
-pub fn get_evt_provider_event_fields(provider_name: &str) -> Result<BTreeMap<u64, BTreeMap<u64, EventDefinition>>, String> {
+pub fn get_evt_provider_events(provider_name: &str) -> Result<BTreeMap<u64, BTreeMap<u64, EventDefinition>>, String> {
     let mut result = BTreeMap::new();
-    let (_h_metadata, h_evtenum) = match get_evt_provider_handle(provider_name)? {
+    let (h_provmeta, h_evtenum) = match get_evt_provider_handle(provider_name)? {
         Some(handles) => handles,
         None => return Ok(result),
+    };
+
+    // Query all resolved level names of this provider, once
+    let prov_levels = match get_evt_prov_metadata_mapping(&h_provmeta,
+                                                     EvtPublisherMetadataLevels,
+                                                     EvtPublisherMetadataLevelValue,
+                                                     EvtPublisherMetadataLevelName) {
+        Ok(map) => map,
+        Err(e) => {
+            warn!("Unable to query provider {} level names: {}", provider_name, e);
+            BTreeMap::new()
+        },
+    };
+
+    // Query all resolved opcode names of this provider, once
+    let prov_opcodes = match get_evt_prov_metadata_mapping(&h_provmeta,
+                                                     EvtPublisherMetadataOpcodes,
+                                                     EvtPublisherMetadataOpcodeValue,
+                                                     EvtPublisherMetadataOpcodeName) {
+        Ok(map) => map,
+        Err(e) => {
+            warn!("Unable to query provider {} opcode names: {}", provider_name, e);
+            BTreeMap::new()
+        },
+    };
+
+    // Query all resolved task names of this provider, once
+    let prov_tasks = match get_evt_prov_metadata_mapping(&h_provmeta,
+                                                     EvtPublisherMetadataTasks,
+                                                     EvtPublisherMetadataTaskValue,
+                                                     EvtPublisherMetadataTaskName) {
+        Ok(map) => map,
+        Err(e) => {
+            warn!("Unable to query provider {} task names: {}", provider_name, e);
+            BTreeMap::new()
+        },
+    };
+
+    // Query all resolved keyword names of this provider, once
+    let prov_keywords = match get_evt_prov_metadata_mapping(&h_provmeta,
+                                                     EvtPublisherMetadataKeywords,
+                                                     EvtPublisherMetadataKeywordValue,
+                                                     EvtPublisherMetadataKeywordName) {
+        Ok(map) => map,
+        Err(e) => {
+            warn!("Unable to query provider {} keyword names: {}", provider_name, e);
+            BTreeMap::new()
+        },
     };
 
     loop {
@@ -224,13 +422,33 @@ pub fn get_evt_provider_event_fields(provider_name: &str) -> Result<BTreeMap<u64
             Ok(_) => return Err(format!("Unexpected value type returned for EventMessageID")),
             Err(e) => return Err(e),
         };
+        let level = match get_evt_metadata(&h_evt, EventMetadataEventLevel) {
+            Ok(EvtVariant::UInt(level)) if level <= u32::MAX as u64 => (level as u32),
+            Ok(_) => return Err(format!("Unexpected value type returned for EventMetadataEventLevel")),
+            Err(e) => return Err(e),
+        };
+        let opcode = match get_evt_metadata(&h_evt, EventMetadataEventOpcode) {
+            Ok(EvtVariant::UInt(opcode)) if opcode <= u32::MAX as u64 => (opcode as u32),
+            Ok(_) => return Err(format!("Unexpected value type returned for EventMetadataEventOpcode")),
+            Err(e) => return Err(e),
+        };
+        let task = match get_evt_metadata(&h_evt, EventMetadataEventTask) {
+            Ok(EvtVariant::UInt(task)) if task <= u32::MAX as u64 => (task as u32),
+            Ok(_) => return Err(format!("Unexpected value type returned for EventMetadataEventTask")),
+            Err(e) => return Err(e),
+        };
+        let keywords = match get_evt_metadata(&h_evt, EventMetadataEventKeyword) {
+            Ok(EvtVariant::UInt(keywords)) => keywords,
+            Ok(_) => return Err(format!("Unexpected value type returned for EventMetadataEventKeyword")),
+            Err(e) => return Err(e),
+        };
 
         let mut message: Option<String> = None;
         // message_id == (DWORD)(-1) means the provider doesn't have a message string for that event
         if message_id < 4294967295 {
             let mut buffer_req: DWORD = 0;
             let res = unsafe {
-                EvtFormatMessage(_h_metadata.as_ptr(), null_mut(), message_id as u32, 0, null_mut() as *mut _, EvtFormatMessageId, 0, null_mut(), &mut buffer_req as *mut _)
+                EvtFormatMessage(h_provmeta.as_ptr(), null_mut(), message_id as u32, 0, null_mut() as *mut _, EvtFormatMessageId, 0, null_mut(), &mut buffer_req as *mut _)
             };
             if res != 0 || get_win32_errcode() != ERROR_INSUFFICIENT_BUFFER {
                 warn!("EvtFormatMessage({}/{}/{}, {}, EvtFormatMessageId) returned {} and error code {}",
@@ -240,7 +458,7 @@ pub fn get_evt_provider_event_fields(provider_name: &str) -> Result<BTreeMap<u64
                 let mut buf : Vec<u16> = Vec::new();
                 buf.resize(buffer_req as usize, 0);
                 let res = unsafe {
-                    EvtFormatMessage(_h_metadata.as_ptr(), null_mut(), message_id as u32, 0, null_mut() as *mut _, EvtFormatMessageId, buffer_req, buf.as_mut_ptr(), &mut buffer_req as *mut _)
+                    EvtFormatMessage(h_provmeta.as_ptr(), null_mut(), message_id as u32, 0, null_mut() as *mut _, EvtFormatMessageId, buffer_req, buf.as_mut_ptr(), &mut buffer_req as *mut _)
                 };
                 // It's an error for EvtFormatMessage() to return a string with "%1" placeholders.
                 // We don't care, that's exactly what we want.
@@ -299,13 +517,86 @@ pub fn get_evt_provider_event_fields(provider_name: &str) -> Result<BTreeMap<u64
             }
         }
 
+        // Resolve the level u32 to a name
+        let level_name = match prov_levels.get(&(level as u64)) {
+            Some(s) => Some(s.to_string()),
+            None => {
+                match get_system_standard_val(SYSTEM_LEVELS, level) {
+                    Some((name, _)) => Some(name.to_string()),
+                    None => {
+                        if level != 0 {
+                            debug!("Undocumented level {} in {}/{}/{}", level, provider_name, event_id, version);
+                        }
+                        None
+                    },
+                }
+            },
+        };
+
+        // Resolve the opcode u32 to a name
+        let opcode_name = match prov_opcodes.get(&(opcode as u64)) {
+            Some(s) => Some(s.to_string()),
+            None => {
+                match get_system_standard_val(SYSTEM_OPCODES, opcode) {
+                    Some((name, _)) => Some(name.to_string()),
+                    None => {
+                        if opcode != 0 {
+                            debug!("Undocumented opcode {} in {}/{}/{}", opcode, provider_name, event_id, version);
+                        }
+                        None
+                    },
+                }
+            },
+        };
+
+        // Resolve the task u32 to a name
+        let task_name = match prov_tasks.get(&(task as u64)) {
+            Some(s) => Some(s.to_string()),
+            None => {
+                match get_system_standard_val(SYSTEM_TASKS, task) {
+                    Some((name, _)) => Some(name.to_string()),
+                    None => {
+                        if task != 0 {
+                            debug!("Undocumented task {} in {}/{}/{}", opcode, provider_name, event_id, task);
+                        }
+                        None
+                    },
+                }
+            },
+        };
+
+        let mut keyword_names = Vec::new();
+        // Ignore reserved placeholder bits 56-63, used to pass information about channels
+        // (see winmeta.xml)
+        for bit in 0..56 {
+            let val = 1 << bit;
+            if (val & keywords) == 0 {
+                continue;
+            }
+            match prov_keywords.get(&(val as u64)) {
+                Some(name) => keyword_names.push(name.to_string()),
+                None => keyword_names.push(format!("0x{:X}", val)),
+            }
+        }
+
         // Insert everything into the final hashmap
         let versions = result.entry(event_id).or_insert(BTreeMap::new());
         if versions.contains_key(&version) {
             warn!("Event {} ID={} version={} enumerated more than once by EvtNextEventMetadata()",
                 provider_name, event_id, version);
         }
-        let event_def = EventDefinition { message, fields };
+        let event_def = EventDefinition {
+            message,
+            level,
+            level_name,
+            opcode,
+            opcode_name,
+            task,
+            task_name,
+            keywords,
+            keyword_names,
+            fields,
+        };
         let prev = versions.insert(version, event_def);
         if prev.is_some() {
             warn!("Event {} #{} version {} has more than one list of field definitions",
@@ -682,6 +973,7 @@ pub fn format_event_message(event_def: &EventDefinition, variants: *const EVT_VA
                     let prop = unwrap_variant_contents(&prop, type_hint)?;
                     let str_to_insert = match prop {
                         EvtVariant::Null => "null".to_string(),
+                        EvtVariant::Handle(_) => "<handle>".to_string(),
                         EvtVariant::String(s) => s,
                         EvtVariant::UInt(u) => format!("{}", u),
                         EvtVariant::Int(i) => format!("{}", i),

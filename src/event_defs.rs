@@ -10,6 +10,14 @@ pub struct EventFieldDefinition {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EventDefinition {
     pub message: Option<String>,
+    pub level: u32,
+    pub level_name: Option<String>,
+    pub opcode: u32,
+    pub opcode_name: Option<String>,
+    pub task: u32,
+    pub task_name: Option<String>,
+    pub keywords: u64,
+    pub keyword_names: Vec<String>,
     pub fields: Vec<EventFieldDefinition>,
 }
 
@@ -26,7 +34,7 @@ pub fn import_metadata_from_system() -> Result<EventDefinitions, String> {
     for provider_name in crate::windows::get_evt_provider_names()? {
         verbose!("Querying provider {}", provider_name);
 
-        match crate::windows::get_evt_provider_event_fields(&provider_name) {
+        match crate::windows::get_evt_provider_events(&provider_name) {
             Ok(events) => field_defs.insert(provider_name, events),
             Err(e) => {
                 warn!("Unable to enumerate events from provider '{}': error {}",
