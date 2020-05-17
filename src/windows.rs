@@ -939,7 +939,7 @@ pub fn format_event_message(event_def: &EventDefinition, variants: *const EVT_VA
     let mut formatted_variants: Vec<Option<String>> = vec![None; variant_count as usize];
     let mut res = String::new(); // the final returned String
     let mut state = EventFormatterState::LookingForEndOfUnformattedChunk { chunk_start_pos: 0 };
-    for (pos, c) in template.chars().chain(vec!['\0'].into_iter()).enumerate() {
+    for (pos, c) in template.char_indices().chain(vec![(template.len(), '\0')].into_iter()) {
         state = match (c, state) {
             ('%', EventFormatterState::LookingForEndOfUnformattedChunk { chunk_start_pos }) =>
                 EventFormatterState::RightAfterPercentInUnformattedChunk { chunk_start_pos },
@@ -948,7 +948,7 @@ pub fn format_event_message(event_def: &EventDefinition, variants: *const EVT_VA
             (c, EventFormatterState::RightAfterPercentInUnformattedChunk { chunk_start_pos }) if c.is_digit(10) => {
                 res.push_str(&template[chunk_start_pos..pos - 1]);
                 EventFormatterState::LookingForEndOfFormatNumber { number_start_pos: pos }
-            }
+            },
             (c, EventFormatterState::LookingForEndOfFormatNumber { number_start_pos }) if !c.is_digit(10) => {
                 let fmt_num = match u32::from_str(&template[number_start_pos..pos]) {
                     Ok(fmt_num) => fmt_num,
@@ -999,8 +999,8 @@ pub fn format_event_message(event_def: &EventDefinition, variants: *const EVT_VA
             },
             ('!', EventFormatterState::LookingForEndOfFormatSpec) =>
                 EventFormatterState::LookingForEndOfUnformattedChunk { chunk_start_pos: pos + 1 },
-            ('\0', EventFormatterState::LookingForEndOfUnformattedChunk { chunk_start_pos }) => {
-                res.push_str(&template[chunk_start_pos..pos - 1]);
+            ('\0', EventFormatterState::LookingForEndOfUnformattedChunk { chunk_start_pos }) if pos == template.len() => {
+                res.push_str(&template[chunk_start_pos..pos]);
                 EventFormatterState::EndOfString
             },
             (_, state) => state,
