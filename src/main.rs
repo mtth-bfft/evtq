@@ -20,7 +20,7 @@ use crate::windows::{EvtHandle, RpcCredentials};
 use crate::xml::render_event_xml;
 use crate::json::render_event_json;
 use crate::formatting::CommonEventProperties;
-use crate::event_defs::*;
+use crate::metadata::*;
 use crate::csv::render_event_csv;
 use crate::output_cols::{OutputColumn, parse_column_names};
 use crate::filtering::xml_query_from_filters;
@@ -31,7 +31,7 @@ mod windows;
 mod xml;
 mod json;
 mod csv;
-mod event_defs;
+mod metadata;
 mod output_cols;
 mod formatting;
 mod filtering;
@@ -40,7 +40,7 @@ pub struct RenderingConfig {
     render_callback: fn(&EvtHandle, &CommonEventProperties, &RenderingConfig) -> Result<(), String>,
     output_file: Box<Mutex<dyn std::io::Write>>,
     datefmt: String,
-    field_defs: BTreeMap<String, BTreeMap<u64, BTreeMap<u64, EventDefinition>>>,
+    metadata: Metadata,
     field_separator: char,
     json_pretty: bool,
     columns: Vec<OutputColumn>,
@@ -207,7 +207,7 @@ EXAMPLES:
         render_callback: render_event_json,
         output_file: Box::new(Mutex::new(std::io::stdout())),
         datefmt: "".to_string(),
-        field_defs: BTreeMap::new(),
+        metadata: BTreeMap::new(),
         field_separator: '\0',
         json_pretty: false,
         columns: vec![],
@@ -241,13 +241,13 @@ EXAMPLES:
 
         if do_import_system_fields && !system_field_defs_read {
             match import_metadata_from_system() {
-                Ok(system_field_defs) => update_metadata_with(&mut render_cfg.field_defs, &system_field_defs),
+                Ok(system_metadata) => update_metadata_with(&mut render_cfg.metadata, &system_metadata),
                 Err(e) => warn!("Could not import system metadata: only using the given export ({})", e),
             }
             system_field_defs_read = true;
         }
         let imported_field_defs = import_metadata_from_file(&mut in_file)?;
-        update_metadata_with(&mut render_cfg.field_defs, &imported_field_defs);
+        update_metadata_with(&mut render_cfg.metadata, &imported_field_defs);
     }
 
     if args.occurrences_of("export-metadata") == 1 {
@@ -262,12 +262,12 @@ EXAMPLES:
         };
         if do_import_system_fields && !system_field_defs_read {
             match import_metadata_from_system() {
-                Ok(system_field_defs) => update_metadata_with(&mut render_cfg.field_defs, &system_field_defs),
+                Ok(system_field_defs) => update_metadata_with(&mut render_cfg.metadata, &system_field_defs),
                 Err(e) => warn!("Some fields will be left unnamed: unable to read metadata from system, {}", e),
             }
             system_field_defs_read = true;
         }
-        return export_metadata_to_file(&render_cfg.field_defs, &mut out_file, render_cfg.json_pretty);
+        return export_metadata_to_file(&render_cfg.metadata, &mut out_file, render_cfg.json_pretty);
     }
 
     if args.occurrences_of("to-xml") == 1 {
@@ -323,7 +323,7 @@ EXAMPLES:
         };
         if do_import_system_fields && !system_field_defs_read {
             match import_metadata_from_system() {
-                Ok(system_field_defs) => update_metadata_with(&mut render_cfg.field_defs, &system_field_defs),
+                Ok(system_field_defs) => update_metadata_with(&mut render_cfg.metadata, &system_field_defs),
                 Err(e) => warn!("JSON output will have generic field names: unable to read event definitions from system, {}", e),
             }
             system_field_defs_read = true;
@@ -331,7 +331,7 @@ EXAMPLES:
         render_cfg.render_callback = render_event_json;
         render_cfg.output_file = Box::from(Mutex::new(out_file));
     }
-    info!("Imported metadata from {} providers", render_cfg.field_defs.len());
+    info!("Imported metadata from {} providers", render_cfg.metadata.len());
 
     if args.occurrences_of("from-backup") == 1 {
         let path = args.value_of("from-backup").unwrap();

@@ -6,7 +6,7 @@ use winapi::ctypes::c_void;
 use crate::windows::{EvtHandle, get_win32_errcode};
 use crate::{RenderingConfig, OutputColumn};
 use crate::formatting::{unwrap_variant_contents, bytes_as_hexstring, format_utc_systemtime, CommonEventProperties, EvtVariant};
-use crate::event_defs::{EventFieldDefinition, EventDefinition};
+use crate::metadata::{EventFieldDefinition, EventDefinition};
 
 pub fn render_event_json(h_event: &EvtHandle, common_props: &CommonEventProperties, render_cfg: &RenderingConfig) -> Result<(), String> {
     let h_ctxuser = unsafe { EvtCreateRenderContext(0, null_mut(), EvtRenderContextUser) };
@@ -57,8 +57,8 @@ pub fn render_event_json(h_event: &EvtHandle, common_props: &CommonEventProperti
         task_name: None,
         fields: vec![],
     };
-    if let Some(events) = render_cfg.field_defs.get(&common_props.provider) {
-        if let Some(versions) = events.get(&common_props.eventid) {
+    if let Some(prov_meta) = render_cfg.metadata.get(&common_props.provider) {
+        if let Some(versions) = prov_meta.events.get(&common_props.eventid) {
             if let Some(known_event_def) = versions.get(&common_props.version) {
                 event_def = known_event_def;
             }

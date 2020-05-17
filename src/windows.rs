@@ -12,7 +12,7 @@ use winapi::shared::winerror::{ERROR_NO_MORE_ITEMS, ERROR_INVALID_OPERATION, ERR
 use winapi::um::winevt::*;
 use crate::log::*;
 use crate::RenderingConfig;
-use crate::event_defs::{EventFieldDefinition, EventDefinition};
+use crate::metadata::{EventFieldDefinition, EventDefinition};
 use crate::formatting::{EvtVariant, CommonEventProperties, get_event_common_properties, unwrap_variant_contents};
 use winapi::shared::minwindef::DWORD;
 use std::str::FromStr;
@@ -199,7 +199,7 @@ pub fn get_evt_provider_names() -> Result<Vec<String>, String> {
     Ok(result)
 }
 
-fn get_evt_provider_metadata(h_provmeta: &EvtHandle, prop: EVT_PUBLISHER_METADATA_PROPERTY_ID) -> Result<EvtVariant, String> {
+pub fn get_evt_provider_metadata(h_provmeta: &EvtHandle, prop: EVT_PUBLISHER_METADATA_PROPERTY_ID) -> Result<EvtVariant, String> {
     let mut buffer: Vec<u8> = Vec::new();
     let mut buffer_len_req: u32 = 0;
     let res = unsafe {
@@ -330,13 +330,13 @@ pub fn get_evt_prov_metadata_mapping(h_provmeta: &EvtHandle,
     Ok(mapping)
 }
 
-// Returns a map from Event ID -> Version -> EventDefinition
-pub fn get_evt_provider_events(provider_name: &str) -> Result<BTreeMap<u64, BTreeMap<u64, EventDefinition>>, String> {
+// Returns a map from Event ID -> Version -> EventDefinition, or an error String
+pub fn get_evt_provider_events(provider_name: &str,
+                               h_provmeta: &EvtHandle,
+                               h_evtenum: &EvtHandle,
+) -> Result<BTreeMap<u64, BTreeMap<u64, EventDefinition>>, String>
+{
     let mut result = BTreeMap::new();
-    let (h_provmeta, h_evtenum) = match get_evt_provider_handle(provider_name)? {
-        Some(handles) => handles,
-        None => return Ok(result),
-    };
 
     // Query all resolved level names of this provider, once
     let prov_levels = match get_evt_prov_metadata_mapping(&h_provmeta,
@@ -440,6 +440,11 @@ pub fn get_evt_provider_events(provider_name: &str) -> Result<BTreeMap<u64, BTre
         let keywords = match get_evt_metadata(&h_evt, EventMetadataEventKeyword) {
             Ok(EvtVariant::UInt(keywords)) => keywords,
             Ok(_) => return Err(format!("Unexpected value type returned for EventMetadataEventKeyword")),
+            Err(e) => return Err(e),
+        };
+        let channel = match get_evt_metadata(&h_evt, EventMetadataEventChannel) {
+            Ok(EvtVariant::UInt(n)) if n <= u32::MAX as u64 => (n as u32),
+            Ok(_) => return Err(format!("Unexpected value type returned for EventMetadataEventChannel")),
             Err(e) => return Err(e),
         };
 
@@ -856,7 +861,7 @@ fn debug_event(h_event: &EvtHandle, error: String) {
             render_callback: crate::xml::render_event_xml,
             output_file: Box::from(std::sync::Mutex::new(std::io::stderr())),
             datefmt: "".to_string(),
-            field_defs: BTreeMap::new(),
+            metadata: BTreeMap::new(),
             field_separator: '\0',
             json_pretty: false,
             columns: vec![],
