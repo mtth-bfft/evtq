@@ -60,6 +60,7 @@ enum EventFormatterState {
     EndOfString,
 }
 
+#[derive(Debug)]
 pub struct EvtHandle {
     handle: NonNull<c_void>,
     auto_free: bool,
@@ -330,6 +331,51 @@ pub fn get_evt_prov_metadata_mapping(h_provmeta: &EvtHandle,
     Ok(mapping)
 }
 
+pub fn format_message(h_provmeta: &EvtHandle, message_id: u32) -> Result<String, String> {
+    let mut buffer_req: DWORD = 0;
+    let res = unsafe {
+        EvtFormatMessage(h_provmeta.as_ptr(),
+                         null_mut(),
+                         message_id,
+                         0,
+                         null_mut() as *mut _,
+                         EvtFormatMessageId,
+                         0,
+                         null_mut(),
+                         &mut buffer_req as *mut _)
+    };
+    if res != 0 || get_win32_errcode() != ERROR_INSUFFICIENT_BUFFER {
+        Err(format!("EvtFormatMessage({:?}, {}, EvtFormatMessageId) returned {} and error code {}",
+                  h_provmeta, message_id, res, get_win32_errcode()))
+    }
+    else {
+        let mut buf : Vec<u16> = Vec::new();
+        buf.resize(buffer_req as usize, 0);
+        let res = unsafe {
+            EvtFormatMessage(h_provmeta.as_ptr(),
+                             null_mut(),
+                             message_id,
+                             0,
+                             null_mut() as *mut _,
+                             EvtFormatMessageId,
+                             buffer_req,
+                             buf.as_mut_ptr(),
+                             &mut buffer_req as *mut _)
+        };
+        // It's an error for EvtFormatMessage() to return a string with "%1" placeholders.
+        // We don't care about placeholders, they're exactly what we want.
+        if res == 0 && get_win32_errcode() != ERROR_EVT_UNRESOLVED_VALUE_INSERT {
+            Err(format!("EvtFormatMessage({:?}, {}, EvtFormatMessageId) 2 returned {} and error code {}",
+                  h_provmeta, message_id, res, get_win32_errcode()))
+        }
+        else {
+            // Remove the NULL terminator and parse as UTF16
+            buf.resize((buffer_req as usize) - 1, 0);
+            Ok(String::from_utf16_lossy(buf.as_slice()))
+        }
+    }
+}
+
 // Returns a map from Event ID -> Version -> EventDefinition, or an error String
 pub fn get_evt_provider_events(provider_name: &str,
                                h_provmeta: &EvtHandle,
@@ -442,40 +488,14 @@ pub fn get_evt_provider_events(provider_name: &str,
             Ok(_) => return Err(format!("Unexpected value type returned for EventMetadataEventKeyword")),
             Err(e) => return Err(e),
         };
-        let channel = match get_evt_metadata(&h_evt, EventMetadataEventChannel) {
-            Ok(EvtVariant::UInt(n)) if n <= u32::MAX as u64 => (n as u32),
-            Ok(_) => return Err(format!("Unexpected value type returned for EventMetadataEventChannel")),
-            Err(e) => return Err(e),
-        };
 
         let mut message: Option<String> = None;
         // message_id == (DWORD)(-1) means the provider doesn't have a message string for that event
         if message_id < 4294967295 {
-            let mut buffer_req: DWORD = 0;
-            let res = unsafe {
-                EvtFormatMessage(h_provmeta.as_ptr(), null_mut(), message_id as u32, 0, null_mut() as *mut _, EvtFormatMessageId, 0, null_mut(), &mut buffer_req as *mut _)
-            };
-            if res != 0 || get_win32_errcode() != ERROR_INSUFFICIENT_BUFFER {
-                warn!("EvtFormatMessage({}/{}/{}, {}, EvtFormatMessageId) returned {} and error code {}",
-                          provider_name, event_id, version, message_id, res, get_win32_errcode());
-            }
-            else {
-                let mut buf : Vec<u16> = Vec::new();
-                buf.resize(buffer_req as usize, 0);
-                let res = unsafe {
-                    EvtFormatMessage(h_provmeta.as_ptr(), null_mut(), message_id as u32, 0, null_mut() as *mut _, EvtFormatMessageId, buffer_req, buf.as_mut_ptr(), &mut buffer_req as *mut _)
-                };
-                // It's an error for EvtFormatMessage() to return a string with "%1" placeholders.
-                // We don't care, that's exactly what we want.
-                if res == 0 && get_win32_errcode() != ERROR_EVT_UNRESOLVED_VALUE_INSERT {
-                    warn!("EvtFormatMessage({}/{}/{}, {}, EvtFormatMessageId) 2 returned {} and error code {}",
-                          provider_name, event_id, version, message_id, res, get_win32_errcode());
-                }
-                else {
-                    // Remove the NULL terminator and parse as UTF16
-                    buf.resize((buffer_req as usize) - 1, 0);
-                    message = Some(String::from_utf16_lossy(buf.as_slice()));
-                }
+            match format_message(h_provmeta, message_id as u32) {
+                Ok(s) => { message = Some(s); },
+                Err(e) => warn!("Unable to format event {}/{}/{} message: {}",
+                    provider_name, event_id, version, e),
             }
         }
 

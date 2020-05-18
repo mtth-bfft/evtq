@@ -9,6 +9,8 @@ use winapi::ctypes::c_void;
 use crate::windows::{EvtHandle, get_win32_errcode};
 use winapi::shared::winerror::ERROR_INSUFFICIENT_BUFFER;
 use winapi::shared::minwindef::FILETIME;
+use std::fmt::Debug;
+use winapi::_core::fmt::Formatter;
 
 pub struct CommonEventProperties {
     pub timestamp: SYSTEMTIME,
@@ -30,6 +32,26 @@ pub enum EvtVariant {
     Boolean(bool),
     Binary(Vec<u8>),
     DateTime(SYSTEMTIME),
+}
+
+impl Debug for EvtVariant {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EvtVariant::Null => write!(f, "EvtVariant::Null"),
+            EvtVariant::String(x) => write!(f, "EvtVariant::String(\"{}\")", x),
+            EvtVariant::Handle(x) => write!(f, "EvtVariant::Handle({:?})", x),
+            EvtVariant::UInt(x) => write!(f, "EvtVariant::Handle({})", x),
+            EvtVariant::Int(x) => write!(f, "EvtVariant::Handle({})", x),
+            EvtVariant::Single(x) => write!(f, "EvtVariant::Handle({})", x),
+            EvtVariant::Double(x) => write!(f, "EvtVariant::Handle({})", x),
+            EvtVariant::Boolean(x) => write!(f, "EvtVariant::Handle({})", x),
+            EvtVariant::Binary(x) => write!(f, "EvtVariant::Handle({:?})", x),
+            EvtVariant::DateTime(x) => write!(f,
+                "EvtVariant::DateTime({}-{}-{} {}:{}:{}.{})",
+                x.wYear, x.wMonth, x.wDay, x.wHour, x.wMinute, x.wSecond, x.wMilliseconds
+            ),
+        }
+    }
 }
 
 pub fn bytes_as_hexstring(bytes: &[u8]) -> String {

@@ -1,7 +1,13 @@
 use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
-use crate::windows::{get_evt_provider_handle, get_evt_provider_metadata};
-use winapi::um::winevt::{EvtPublisherMetadataPublisherGuid, EvtPublisherMetadataResourceFilePath};
+use crate::windows::{get_evt_provider_handle, get_evt_provider_metadata, format_message};
+use winapi::um::winevt::{
+    EvtPublisherMetadataPublisherGuid,
+    EvtPublisherMetadataResourceFilePath,
+    EvtPublisherMetadataParameterFilePath,
+    EvtPublisherMetadataMessageFilePath,
+    EvtPublisherMetadataPublisherMessageID,
+};
 use crate::formatting::EvtVariant;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -27,6 +33,10 @@ pub struct EventDefinition {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ProviderMetadata {
     pub guid: Option<String>,
+    pub resource_file_path: Option<String>,
+    pub parameter_file_path: Option<String>,
+    pub message_file_path: Option<String>,
+    pub message: Option<String>,
     pub events: BTreeMap<u64, BTreeMap<u64, EventDefinition>>,
 }
 
@@ -59,11 +69,53 @@ pub fn import_metadata_from_system() -> Result<Metadata, String> {
         };
         let guid = match get_evt_provider_metadata(&h_provmeta, EvtPublisherMetadataPublisherGuid) {
             Ok(EvtVariant::String(s)) => Some(s),
-            Ok(_) => { warn!("Unexpected type for provider {} GUID", provider_name); None },
+            Ok(o) => { warn!("Unexpected type for provider {} GUID: {:?}", provider_name, o); None },
             Err(e) => { warn!("Unable to query provider {} GUID: {}", provider_name, e); None },
         };
+        let resource_file_path = match get_evt_provider_metadata(&h_provmeta, EvtPublisherMetadataResourceFilePath) {
+            Ok(EvtVariant::String(s)) => Some(s),
+            // Docs say EvtPublisherMetadataResourceFilePath is a String, actually it can also be Null
+            Ok(EvtVariant::Null) => None,
+            Ok(o) => { warn!("Unexpected type for provider {} resource filepath: {:?}", provider_name, o); None },
+            Err(e) => { warn!("Unable to query provider {} resource filepath: {}", provider_name, e); None },
+        };
+        let parameter_file_path = match get_evt_provider_metadata(&h_provmeta, EvtPublisherMetadataParameterFilePath) {
+            Ok(EvtVariant::String(s)) => Some(s),
+            // Docs say EvtPublisherMetadataParameterFilePath is a String, actually it can also be Null
+            Ok(EvtVariant::Null) => None,
+            Ok(o) => { warn!("Unexpected type for provider {} parameter filepath: {:?}", provider_name, o); None },
+            Err(e) => { warn!("Unable to query provider {} parameter filepath: {}", provider_name, e); None },
+        };
+        let message_file_path = match get_evt_provider_metadata(&h_provmeta, EvtPublisherMetadataMessageFilePath) {
+            Ok(EvtVariant::String(s)) => Some(s),
+            // Docs say EvtPublisherMetadataMessageFilePath is a String, actually it can also be Null
+            Ok(EvtVariant::Null) => None,
+            Ok(o) => { warn!("Unexpected type for provider {} message filepath: {:?}", provider_name, o); None },
+            Err(e) => { warn!("Unable to query provider {} message filepath: {}", provider_name, e); None },
+        };
+        let message = match get_evt_provider_metadata(&h_provmeta, EvtPublisherMetadataPublisherMessageID) {
+            // MessageID = (DWORD)(-1) if there's no message
+            Ok(EvtVariant::UInt(4294967295)) => None,
+            Ok(EvtVariant::UInt(message_id)) if message_id <= u32::MAX as u64 => {
+                match format_message(&h_provmeta, message_id as u32) {
+                    Ok(s) => Some(s),
+                    Err(e) => {
+                        warn!("Unable to format provider {} message (ID={}) : {:?}",
+                              provider_name, message_id, e);
+                        None
+                    }
+                }
+            },
+            Ok(o) => { warn!("Unexpected type for provider {} message ID: {:?}", provider_name, o); None },
+            Err(e) => { warn!("Unable to query provider {} message ID: {}", provider_name, e); None },
+        };
+
         metadata.insert(provider_name, ProviderMetadata {
             guid,
+            resource_file_path,
+            parameter_file_path,
+            message_file_path,
+            message,
             events,
         });
     }
