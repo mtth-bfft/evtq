@@ -18,6 +18,7 @@ pub struct EventFieldDefinition {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EventDefinition {
+    pub channel: Option<String>,
     pub message: Option<String>,
     pub level: u32,
     pub level_name: Option<String>,

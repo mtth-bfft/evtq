@@ -51,6 +51,7 @@ pub fn render_event_csv(h_event: &EvtHandle, common_props: &CommonEventPropertie
     }
 
     let mut event_def = &EventDefinition {
+        channel: None,
         message: None,
         level: 0,
         level_name: None,

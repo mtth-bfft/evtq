@@ -46,6 +46,7 @@ pub fn render_event_json(h_event: &EvtHandle, common_props: &CommonEventProperti
     }
 
     let mut event_def = &EventDefinition {
+        channel: None,
         message: None,
         level: 0,
         level_name: None,

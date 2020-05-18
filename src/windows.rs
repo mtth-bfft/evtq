@@ -19,6 +19,17 @@ use std::str::FromStr;
 
 const INFINITE : u32 = 0xFFFFFFFF;
 
+// System-wide standard channels defined by Windows. Event-provider-specific channels
+// are queried at runtime.
+const SYSTEM_CHANNELS: &[(u32, &'static str, &'static str)] = &[
+    (0, "TraceClassic", "Events for Classic ETW tracing"),
+    (8, "System", "Events for all installed system services.  This channel is secured to applications running under system service accounts or user applications running under local adminstrator privileges"),
+    (9, "Application", "Events for all user-level applications. This channel is not secured and open to any applications. Applications which log extensive information should define an application-specific channel"),
+    (10, "Security", "The Windows Audit Log.  For exclusive use of the Windows Local Security Authority. User events may appear as audits if supported by the underlying application"),
+    (11, "TraceLogging", "Event contains provider traits and TraceLogging event metadata"),
+    (12, "ProviderMetadata", "Event contains provider traits"),
+];
+
 // System-wide standard levels defined by Windows. Event-provider-specific levels
 // are queried at runtime.
 const SYSTEM_LEVELS: &[(u32, &'static str, &'static str)] = &[
@@ -432,6 +443,18 @@ pub fn get_evt_provider_events(provider_name: &str,
         },
     };
 
+    // Query all channels of this provider, once
+    let prov_channels = match get_evt_prov_metadata_mapping(&h_provmeta,
+                                                     EvtPublisherMetadataChannelReferences,
+                                                     EvtPublisherMetadataChannelReferenceID,
+                                                     EvtPublisherMetadataChannelReferencePath) {
+        Ok(map) => map,
+        Err(e) => {
+            warn!("Unable to query provider {} channel names: {}", provider_name, e);
+            BTreeMap::new()
+        },
+    };
+
     loop {
         let h_evt = unsafe {
             EvtNextEventMetadata(h_evtenum.as_ptr(), 0)
@@ -488,6 +511,11 @@ pub fn get_evt_provider_events(provider_name: &str,
             Ok(_) => return Err(format!("Unexpected value type returned for EventMetadataEventKeyword")),
             Err(e) => return Err(e),
         };
+        let channel = match get_evt_metadata(&h_evt, EventMetadataEventChannel) {
+            Ok(EvtVariant::UInt(n)) if n <= u32::MAX as u64 => (n as u32),
+            Ok(_) => return Err(format!("Unexpected value type returned for EventMetadataEventChannel")),
+            Err(e) => return Err(e),
+        };
 
         let mut message: Option<String> = None;
         // message_id == (DWORD)(-1) means the provider doesn't have a message string for that event
@@ -541,6 +569,23 @@ pub fn get_evt_provider_events(provider_name: &str,
                 };
             }
         }
+
+        // Resolve the channel ID to a name (the ID is useless otherwise)
+        let channel = match prov_channels.get(&(channel as u64)) {
+            Some(s) => Some(s.to_string()),
+            None => {
+                match get_system_standard_val(SYSTEM_CHANNELS, channel) {
+                    Some((name, _)) => Some(name.to_string()),
+                    None => {
+                        if channel != 0 {
+                            debug!("Event {}/{}/{} uses unknown channel ID {}",
+                               provider_name, event_id, version, channel);
+                        }
+                        None
+                    }
+                }
+            },
+        };
 
         // Resolve the level u32 to a name
         let level_name = match prov_levels.get(&(level as u64)) {
@@ -611,6 +656,7 @@ pub fn get_evt_provider_events(provider_name: &str,
                 provider_name, event_id, version);
         }
         let event_def = EventDefinition {
+            channel,
             message,
             level,
             level_name,
