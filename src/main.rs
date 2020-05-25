@@ -374,10 +374,14 @@ EXAMPLES:
 
         let mut channels = Vec::new();
         for channel_name in windows::evt_list_channels(&session)? {
-            if !windows::can_channel_be_subscribed(&session, &channel_name)? {
-                continue;
+            match windows::can_channel_be_subscribed(&session, &channel_name) {
+                Err(e) => {
+                    warn!("{}: cannot read channel config, some events may be missing", e);
+                    continue;
+                },
+                Ok(false) => continue,
+                Ok(true) => channels.push(channel_name),
             }
-            channels.push(channel_name);
         }
         if args.occurrences_of("list-channels") != 0 {
             for channel_name in &channels {
@@ -399,7 +403,13 @@ EXAMPLES:
                 Some(ref xml) => debug!("Using XML filter:\n{}", xml),
                 None => debug!("(without any filter set up)"),
             }
-            let h_subscription = windows::subscribe_channel(&session, &channel_name, &render_cfg, &xml_filter, dump_existing)?;
+            let h_subscription = match windows::subscribe_channel(&session, &channel_name, &render_cfg, &xml_filter, dump_existing) {
+                Ok(h) => h,
+                Err(e) => {
+                    warn!("{}: unable to subscribe, some events may be missing", e);
+                    continue;
+                },
+            };
             subscriptions.push(h_subscription);
         }
         info!("Starting event rendering loop");
