@@ -307,12 +307,12 @@ pub fn get_event_common_properties(h_event: &EvtHandle) -> Result<Option<CommonE
 
     let timestamp = match get_event_common_property(buffer.as_ptr(), EvtSystemTimeCreated) {
         Ok(EvtVariant::DateTime(s)) => s,
-        Ok(_) => return Err(format!("Unexpected EVT_VARIANT type for EvtSystemTimeCreated")),
+        Ok(other) => return Err(format!("Unexpected EVT_VARIANT type {:?} for EvtSystemTimeCreated", other)),
         Err(e) => return Err(e),
     };
     let hostname = match get_event_common_property(buffer.as_ptr(), EvtSystemComputer) {
         Ok(EvtVariant::String(s)) => s,
-        Ok(_) => return Err(format!("Unexpected EVT_VARIANT type for EvtSystemComputer")),
+        Ok(other) => return Err(format!("Unexpected EVT_VARIANT type {:?} for EvtSystemComputer", other)),
         Err(e) => return Err(e),
     };
     let recordid = match get_event_common_property(buffer.as_ptr(), EvtSystemEventRecordId) {
@@ -333,24 +333,24 @@ pub fn get_event_common_properties(h_event: &EvtHandle) -> Result<Option<CommonE
             // </Event>
             return Ok(None);
         },
-        Ok(_) => return Err(format!("Unexpected EVT_VARIANT type for EvtSystemEventRecordId")),
+        Ok(other) => return Err(format!("Unexpected EVT_VARIANT type {:?} for EvtSystemEventRecordId", other)),
         Err(e) => return Err(e),
     };
     let provider = match get_event_common_property(buffer.as_ptr(), EvtSystemProviderName) {
         Ok(EvtVariant::String(s)) => s,
-        Ok(_) => return Err(format!("Unexpected EVT_VARIANT type for EvtSystemProviderName")),
+        Ok(other) => return Err(format!("Unexpected EVT_VARIANT type {:?} for EvtSystemProviderName", other)),
         Err(e) => return Err(e),
     };
     let eventid = match get_event_common_property(buffer.as_ptr(), EvtSystemEventID) {
         Ok(EvtVariant::UInt(s)) => s,
-        Ok(_) => return Err(format!("Unexpected EVT_VARIANT type for EvtSystemEventID")),
+        Ok(other) => return Err(format!("Unexpected EVT_VARIANT type {:?} for EvtSystemEventID", other)),
         Err(e) => return Err(e),
     };
     let version = match get_event_common_property(buffer.as_ptr(), EvtSystemVersion) {
         Ok(EvtVariant::UInt(s)) => s,
         // Some events (e.g. Windows PowerShell/PowerShell/600) don't have versions...
         Ok(EvtVariant::Null) => 0,
-        Ok(_) => return Err(format!("Unexpected EVT_VARIANT type for EvtSystemVersion")),
+        Ok(other) => return Err(format!("Unexpected EVT_VARIANT type {:?} for EvtSystemVersion", other)),
         Err(e) => return Err(e),
     };
 

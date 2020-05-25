@@ -100,15 +100,20 @@ pub fn import_metadata_from_system() -> Result<Metadata, String> {
             Ok(EvtVariant::UInt(message_id)) if message_id <= u32::MAX as u64 => {
                 match format_message(&h_provmeta, message_id as u32) {
                     Ok(s) => Some(s),
-                    Err(e) => {
-                        warn!("Unable to format provider {} message (ID={}) : {:?}",
-                              provider_name, message_id, e);
+                    Err((e, _)) => {
+                        warn!("Unable to format provider {} message: {:?}", provider_name, e);
                         None
                     }
                 }
             },
-            Ok(o) => { warn!("Unexpected type for provider {} message ID: {:?}", provider_name, o); None },
-            Err(e) => { warn!("Unable to query provider {} message ID: {}", provider_name, e); None },
+            Ok(o) => {
+                warn!("Unexpected type for provider {} message ID: {:?}", provider_name, o);
+                None
+            },
+            Err(e) => {
+                warn!("Unable to query provider {} message ID: {}", provider_name, e);
+                None
+            },
         };
 
         metadata.insert(provider_name, ProviderMetadata {

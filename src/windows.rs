@@ -8,7 +8,18 @@ use winapi::ctypes::c_void;
 use winapi::um::errhandlingapi::GetLastError;
 use winapi::um::minwinbase::SYSTEMTIME;
 use std::sync::atomic::Ordering::Relaxed;
-use winapi::shared::winerror::{ERROR_NO_MORE_ITEMS, ERROR_INVALID_OPERATION, ERROR_INSUFFICIENT_BUFFER, ERROR_ACCESS_DENIED, ERROR_FILE_NOT_FOUND, ERROR_RESOURCE_TYPE_NOT_FOUND, ERROR_INVALID_DATA, RPC_S_SERVER_UNAVAILABLE, ERROR_EVT_UNRESOLVED_VALUE_INSERT};
+use winapi::shared::winerror::{
+    ERROR_NO_MORE_ITEMS,
+    ERROR_INVALID_OPERATION,
+    ERROR_INSUFFICIENT_BUFFER,
+    ERROR_ACCESS_DENIED,
+    ERROR_FILE_NOT_FOUND,
+    ERROR_RESOURCE_TYPE_NOT_FOUND,
+    ERROR_INVALID_DATA,
+    RPC_S_SERVER_UNAVAILABLE,
+    ERROR_EVT_UNRESOLVED_VALUE_INSERT,
+    ERROR_EVT_MESSAGE_LOCALE_NOT_FOUND,
+};
 use winapi::um::winevt::*;
 use crate::log::*;
 use crate::RenderingConfig;
@@ -251,12 +262,12 @@ fn get_evt_metadata(h_evt: &EvtHandle, prop: EVT_EVENT_METADATA_PROPERTY_ID) -> 
     unwrap_variant_contents(&evt_variant, None)
 }
 
-fn get_evt_array_len(h_array: &EvtHandle) -> Result<DWORD, String> {
+fn get_evt_array_len(h_array: &EvtHandle) -> Result<DWORD, DWORD> {
     let mut len: DWORD = 0;
     let res = unsafe { EvtGetObjectArraySize(h_array.as_ptr(),
                                              &mut len as *mut DWORD) };
     if res == 0 {
-        return Err(format!("EvtGetObjectArraySize() failed with code {}", get_win32_errcode()));
+        return Err(get_win32_errcode());
     }
     Ok(len)
 }
@@ -296,6 +307,7 @@ fn get_evt_array_prop(h_array: &EvtHandle, prop: EVT_PUBLISHER_METADATA_PROPERTY
 }
 
 pub fn get_evt_prov_metadata_mapping(h_provmeta: &EvtHandle,
+                                     provider_name: &str,
                                      array_prop: EVT_PUBLISHER_METADATA_PROPERTY_ID,
                                      key_prop: EVT_PUBLISHER_METADATA_PROPERTY_ID,
                                      val_prop: EVT_PUBLISHER_METADATA_PROPERTY_ID,
@@ -303,22 +315,30 @@ pub fn get_evt_prov_metadata_mapping(h_provmeta: &EvtHandle,
 
     let h_array = match get_evt_provider_metadata(h_provmeta, array_prop) {
         Ok(EvtVariant::Handle(h)) => h,
-        Ok(_) => return Err(format!("Unexpected metadata value type returned for mapping type {}", array_prop)),
+        Ok(other) => return Err(format!("Unexpected provider \"{}\" metadata value type returned for mapping type {} : {:?}",
+                                    provider_name, array_prop, other)),
         Err(e) => return Err(e),
     };
     let mut mapping = BTreeMap::new();
     let num_vals = match get_evt_array_len(&h_array) {
         Ok(n) => n,
-        Err(e) => {
-            warn!("Unable to query provider-defined mapping type {} length: {}", array_prop, e);
+        Err(n) => {
+            if n == ERROR_FILE_NOT_FOUND {
+                verbose!("Provider \"{}\" missing definition file, cannot query metadata property {}",
+                         provider_name, array_prop);
+            } else {
+                warn!("Unable to query provider \"{}\" metadata ID={} array length: EvtGetObjectArraySize() failed with code {}",
+                      provider_name, array_prop, n);
+            }
             0
         },
     };
     for idx in 0..num_vals {
         let key = match get_evt_array_prop(&h_array, key_prop, idx) {
             Ok(EvtVariant::UInt(u)) => u,
-            Ok(_) => {
-                warn!("Unable to query some provider-defined mapping type {}: unexpected type returned as key", array_prop);
+            Ok(other) => {
+                warn!("Unable to query some provider-defined mapping type {}: unexpected type {:?} returned as key",
+                      array_prop, other);
                 break;
             }
             Err(e) => {
@@ -328,8 +348,9 @@ pub fn get_evt_prov_metadata_mapping(h_provmeta: &EvtHandle,
         };
         let val = match get_evt_array_prop(&h_array, val_prop, idx) {
             Ok(EvtVariant::String(s)) => s,
-            Ok(_) => {
-                warn!("Unable to query some provider-defined mapping type {}: unexpected type returned as val", array_prop);
+            Ok(other) => {
+                warn!("Unable to query some provider-defined mapping type {}: unexpected type {:?} returned as val",
+                      array_prop, other);
                 break;
             }
             Err(e) => {
@@ -342,7 +363,7 @@ pub fn get_evt_prov_metadata_mapping(h_provmeta: &EvtHandle,
     Ok(mapping)
 }
 
-pub fn format_message(h_provmeta: &EvtHandle, message_id: u32) -> Result<String, String> {
+pub fn format_message(h_provmeta: &EvtHandle, message_id: u32) -> Result<String, (String, DWORD)> {
     let mut buffer_req: DWORD = 0;
     let res = unsafe {
         EvtFormatMessage(h_provmeta.as_ptr(),
@@ -356,8 +377,8 @@ pub fn format_message(h_provmeta: &EvtHandle, message_id: u32) -> Result<String,
                          &mut buffer_req as *mut _)
     };
     if res != 0 || get_win32_errcode() != ERROR_INSUFFICIENT_BUFFER {
-        Err(format!("EvtFormatMessage({:?}, {}, EvtFormatMessageId) returned {} and error code {}",
-                  h_provmeta, message_id, res, get_win32_errcode()))
+        Err((format!("EvtFormatMessage({:?}, {}, EvtFormatMessageId) failed with error code {}",
+                  h_provmeta, message_id, get_win32_errcode()), get_win32_errcode()))
     }
     else {
         let mut buf : Vec<u16> = Vec::new();
@@ -376,8 +397,8 @@ pub fn format_message(h_provmeta: &EvtHandle, message_id: u32) -> Result<String,
         // It's an error for EvtFormatMessage() to return a string with "%1" placeholders.
         // We don't care about placeholders, they're exactly what we want.
         if res == 0 && get_win32_errcode() != ERROR_EVT_UNRESOLVED_VALUE_INSERT {
-            Err(format!("EvtFormatMessage({:?}, {}, EvtFormatMessageId) 2 returned {} and error code {}",
-                  h_provmeta, message_id, res, get_win32_errcode()))
+            Err((format!("EvtFormatMessage({:?}, {}, EvtFormatMessageId)2 failed with error code {}",
+                  h_provmeta, message_id, get_win32_errcode()), get_win32_errcode()))
         }
         else {
             // Remove the NULL terminator and parse as UTF16
@@ -397,6 +418,7 @@ pub fn get_evt_provider_events(provider_name: &str,
 
     // Query all resolved level names of this provider, once
     let prov_levels = match get_evt_prov_metadata_mapping(&h_provmeta,
+                                                     provider_name,
                                                      EvtPublisherMetadataLevels,
                                                      EvtPublisherMetadataLevelValue,
                                                      EvtPublisherMetadataLevelName) {
@@ -409,6 +431,7 @@ pub fn get_evt_provider_events(provider_name: &str,
 
     // Query all resolved opcode names of this provider, once
     let prov_opcodes = match get_evt_prov_metadata_mapping(&h_provmeta,
+                                                     provider_name,
                                                      EvtPublisherMetadataOpcodes,
                                                      EvtPublisherMetadataOpcodeValue,
                                                      EvtPublisherMetadataOpcodeName) {
@@ -421,6 +444,7 @@ pub fn get_evt_provider_events(provider_name: &str,
 
     // Query all resolved task names of this provider, once
     let prov_tasks = match get_evt_prov_metadata_mapping(&h_provmeta,
+                                                     provider_name,
                                                      EvtPublisherMetadataTasks,
                                                      EvtPublisherMetadataTaskValue,
                                                      EvtPublisherMetadataTaskName) {
@@ -433,6 +457,7 @@ pub fn get_evt_provider_events(provider_name: &str,
 
     // Query all resolved keyword names of this provider, once
     let prov_keywords = match get_evt_prov_metadata_mapping(&h_provmeta,
+                                                     provider_name,
                                                      EvtPublisherMetadataKeywords,
                                                      EvtPublisherMetadataKeywordValue,
                                                      EvtPublisherMetadataKeywordName) {
@@ -445,6 +470,7 @@ pub fn get_evt_provider_events(provider_name: &str,
 
     // Query all channels of this provider, once
     let prov_channels = match get_evt_prov_metadata_mapping(&h_provmeta,
+                                                     provider_name,
                                                      EvtPublisherMetadataChannelReferences,
                                                      EvtPublisherMetadataChannelReferenceID,
                                                      EvtPublisherMetadataChannelReferencePath) {
@@ -522,8 +548,12 @@ pub fn get_evt_provider_events(provider_name: &str,
         if message_id < 4294967295 {
             match format_message(h_provmeta, message_id as u32) {
                 Ok(s) => { message = Some(s); },
-                Err(e) => warn!("Unable to format event {}/{}/{} message: {}",
-                    provider_name, event_id, version, e),
+                Err((_, ERROR_EVT_MESSAGE_LOCALE_NOT_FOUND)) =>
+                    verbose!("Event {}/{}/{} publisher does not provide a message in the selected locale",
+                             provider_name, event_id, version),
+                Err((e, _)) =>
+                    warn!("Unable to format event {}/{}/{} message: {}",
+                          provider_name, event_id, version, e),
             }
         }
 
@@ -770,8 +800,10 @@ pub fn evt_get_channel_type(session: &EvtHandle, channel_name: &str) -> Result<u
     channel_name_u16.resize(channel_name.len() + 1, 0); // append a NULL terminator
     let h_channel = unsafe { EvtOpenChannelConfig(session.as_ptr(), channel_name_u16.as_ptr(), 0) };
     if h_channel.is_null() {
-        return Err(format!("EvtOpenChannelConfig('{}') failed with code {}",
-                           channel_name, get_win32_errcode()));
+        return Err(match get_win32_errcode() {
+            5 => format!("EvtOpenChannelConfig(\"{}\") failed due to insufficient privileges (are you admin?)", channel_name),
+            n => format!("EvtOpenChannelConfig(\"{}\") failed with code {}", channel_name, n),
+        });
     }
     let h_channel = EvtHandle::from_raw(h_channel)?;
 
@@ -889,8 +921,12 @@ pub fn subscribe_channel(h_session: &EvtHandle, channel_name: &str, render_cfg: 
         flags)
     } as *mut c_void;
     if h_subscription.is_null() {
-        return Err(format!("EvtSubscribe('{}') failed with code {} when queried with filter:\n{:?}",
-                           channel_name, get_win32_errcode(), xml_query));
+        return Err(match get_win32_errcode() {
+            5 => format!("EvtSubscribe(\"{}\") failed due to insufficient privileges (are you admin?)",
+                         channel_name),
+            err => format!("EvtSubscribe(\"{}\") failed with code {} when queried with filter\n{:?}",
+                           channel_name, err, xml_query),
+        });
     }
     let h_subscription = EvtHandle::from_raw(h_subscription)?;
 
