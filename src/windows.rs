@@ -19,6 +19,7 @@ use winapi::shared::winerror::{
     RPC_S_SERVER_UNAVAILABLE,
     ERROR_EVT_UNRESOLVED_VALUE_INSERT,
     ERROR_EVT_MESSAGE_LOCALE_NOT_FOUND,
+    ERROR_EVT_MESSAGE_NOT_FOUND,
 };
 use winapi::um::winevt::*;
 use crate::log::*;
@@ -548,6 +549,9 @@ pub fn get_evt_provider_events(provider_name: &str,
         if message_id < 4294967295 {
             match format_message(h_provmeta, message_id as u32) {
                 Ok(s) => { message = Some(s); },
+                Err((_, ERROR_EVT_MESSAGE_NOT_FOUND)) =>
+                    verbose!("Event {}/{}/{} publisher does not provide a message",
+                             provider_name, event_id, version),
                 Err((_, ERROR_EVT_MESSAGE_LOCALE_NOT_FOUND)) =>
                     verbose!("Event {}/{}/{} publisher does not provide a message in the selected locale",
                              provider_name, event_id, version),

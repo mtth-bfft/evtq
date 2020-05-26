@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use crate::windows::{get_evt_provider_handle, get_evt_provider_metadata, format_message};
+use winapi::shared::winerror::{ERROR_EVT_MESSAGE_NOT_FOUND, ERROR_EVT_MESSAGE_LOCALE_NOT_FOUND};
 use winapi::um::winevt::{
     EvtPublisherMetadataPublisherGuid,
     EvtPublisherMetadataResourceFilePath,
@@ -100,6 +101,7 @@ pub fn import_metadata_from_system() -> Result<Metadata, String> {
             Ok(EvtVariant::UInt(message_id)) if message_id <= u32::MAX as u64 => {
                 match format_message(&h_provmeta, message_id as u32) {
                     Ok(s) => Some(s),
+                    Err((_, n)) if n == ERROR_EVT_MESSAGE_NOT_FOUND || n == ERROR_EVT_MESSAGE_LOCALE_NOT_FOUND => None,
                     Err((e, _)) => {
                         warn!("Unable to format provider {} message: {:?}", provider_name, e);
                         None
@@ -125,6 +127,7 @@ pub fn import_metadata_from_system() -> Result<Metadata, String> {
             events,
         });
     }
+    info!("Metadata import successful.");
     Ok(metadata)
 }
 
